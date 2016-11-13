@@ -2,21 +2,21 @@ package main
 
 import (
 	"bufio"
-	"strings"
 	"bytes"
+	"strings"
 )
 
-type node struct {
+type Node struct {
 	name string
 }
 
-func (n *node) String() string {
+func (n *Node) String() string {
 	return n.name
 }
 
 type edge struct {
-	source *node
-	target *node
+	source *Node
+	target *Node
 }
 
 func (e *edge) String() string {
@@ -25,29 +25,59 @@ func (e *edge) String() string {
 
 // Graph represents the read dependency graph in memory. It satisfies the io.Reader and io.Writer interfaces
 type Graph struct {
-	nodes []*node
+	nodes []*Node
 	edges []*edge
 }
 
-func (g *Graph) AddEdge(source *node, target *node) {
+func (g *Graph) AddEdge(sourceName string, targetName string) {
 	// add the nodes if they aren't already in place
-	var foundSource, foundTarget bool
+	var source, target *Node
 	for _, nptr := range g.nodes {
-		if nptr == source {
-			foundSource = true
-		} else if nptr == target {
-			foundTarget = true
+		if nptr.name == sourceName {
+			source = nptr
+		} else if nptr.name == targetName {
+			target = nptr
 		}
 	}
-	if !foundSource {
+	if source == nil {
+		source = &Node{sourceName}
 		g.nodes = append(g.nodes, source)
 	}
-	if !foundTarget {
+	if target == nil {
+		target = &Node{targetName}
 		g.nodes = append(g.nodes, target)
 	}
 	g.edges = append(g.edges, &edge{source: source, target: target})
 }
 
+func (g *Graph) GetNode(name string) *Node {
+	for _, node := range g.nodes {
+		if node.name == name {
+			return node
+		}
+	}
+	return nil
+}
+
+func (g *Graph) GetDependencies(n *Node) []*Node {
+	deps := make([]*Node, 0)
+	for _, edge := range g.edges {
+		if edge.source == n {
+			deps = append(deps, edge.target)
+		}
+	}
+	return deps
+}
+
+func (g *Graph) GetDependants(n *Node) []*Node {
+	deps := make([]*Node, 0)
+	for _, edge := range g.edges {
+		if edge.target == n {
+			deps = append(deps, edge.source)
+		}
+	}
+	return deps
+}
 
 func (g *Graph) scanDependencies(line string, syntax Syntax) {
 	//sourceSepIndex, infixIndex := strings.Index(line, syntax.sourceDelimiter), strings.Index(line, syntax.infix)
@@ -64,7 +94,7 @@ func (g *Graph) scanDependencies(line string, syntax Syntax) {
 					target = strings.TrimSpace(target)
 				}
 				if target != "" {
-					g.AddEdge(&node{source}, &node{target})
+					g.AddEdge(source, target)
 				}
 			}
 		}
@@ -83,7 +113,7 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax Syntax) (*Graph, erro
 		infixIndex := strings.Index(line, syntax.infix)
 		suffixIndex := strings.LastIndex(line, syntax.suffix)
 		if prefIndex >= 0 && infixIndex >= 0 && suffixIndex >= 0 {
-			g.scanDependencies(line[prefIndex+len(syntax.prefix):suffixIndex-1], syntax)
+			g.scanDependencies(line[prefIndex+len(syntax.prefix):suffixIndex], syntax)
 		}
 	}
 	return g, nil
@@ -101,7 +131,7 @@ func (g *Graph) String() string {
 // newGraph creates a new, empty graph
 func newGraph() *Graph {
 	return &Graph{
-		nodes: make([]*node, 0),
+		nodes: make([]*Node, 0),
 		edges: make([]*edge, 0),
 	}
 }
@@ -117,11 +147,88 @@ type Syntax struct {
 
 func scanLineWithEscape(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	advance, token, err = bufio.ScanLines(data, atEOF)
-	for err == nil && len(token)>0 && token[len(token)-1] == '\\' {
+	for err == nil && len(token) > 0 && token[len(token)-1] == '\\' {
 		secondAdvance, secondToken, secondErr := bufio.ScanLines(data, atEOF)
 		advance += secondAdvance
 		token = append(token, secondToken...)
 		err = secondErr
 	}
 	return
+}
+
+func insertIntoString(s *string, offset int, insertion string) *string {
+	var str string
+	if s == nil {
+		str = strings.Repeat(" ", offset) + insertion
+	} else if offset > len(*s) {
+		str = *s + strings.Repeat(" ", offset-len(*s)) + insertion
+	} else {
+		str = (*s)[:offset] + insertion + (*s)[offset:]
+	}
+	return &str
+}
+
+func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modout []*string, height int, width int) {
+	dependencies := g.GetDependencies(n)
+	namelen := len(n.name) + 2
+	if len(dependencies) == 0 {
+		name := " " + n.name + " "
+		if len(out) == 0 {
+			name = strings.Repeat(" ", rightOffset) + name
+			out = append(out, &name)
+		} else {
+			out[0] = insertIntoString(out[0], rightOffset, name)
+		}
+		// we are at the bottom of the graph
+		return out, 1, namelen
+	} else {
+		if len(out) == 0 {
+			out = append(out, nil)
+		}
+		modout = out
+		out = out[1:]
+		// we have some dependencies, let us print them
+		var depWidth, locHeight, locWidth int
+		for _, dep := range dependencies {
+			out, locHeight, locWidth = printDepTreeLevel(g, dep, out, rightOffset+depWidth)
+			depWidth += locWidth
+			if height < locHeight {
+				height = locHeight
+			}
+		}
+		modout = append(modout[:1], out...)
+		// print our name in the middle
+		if namelen > depWidth {
+			// shift everything below to the right
+			shiftOffsetLeft := strings.Repeat(" ", (namelen-depWidth)/2)
+			shiftOffsetRight := strings.Repeat(" ", (namelen-depWidth+1)/2)
+			for _, strptr := range out {
+				strptr = insertIntoString(insertIntoString(strptr, rightOffset+depWidth, shiftOffsetRight), rightOffset, shiftOffsetLeft)
+			}
+			modout[0] = insertIntoString(modout[0], rightOffset, " "+n.name+" ")
+			return modout, height, len(n.name) + 2
+		} else {
+			modout[0] = insertIntoString(modout[0], rightOffset, strings.Repeat(" ", (depWidth-namelen)/2)+" "+n.name+" "+strings.Repeat(" ", (depWidth-namelen+1)/2))
+			return modout, height, depWidth
+		}
+	}
+}
+
+// printDepTree pretty prints the dependency tree of the specified startNode to stdout
+func printDepTree(g *Graph, startNode *Node) {
+	out, _, _ := printDepTreeLevel(g, startNode, make([]*string, 1), 0)
+	for _, lineptr := range out {
+		println(*lineptr)
+	}
+}
+
+// printFullDepTree prints the dependency tree of the whole graph to stdout
+func printFullDepTree(g *Graph) {
+	// make a copy of our graph
+	fullGraph := *g
+	for _, node := range g.nodes {
+		// TODO add only edges where the graph is separated
+		fullGraph.AddEdge("_all", node.name)
+	}
+	printDepTree(&fullGraph, fullGraph.GetNode("_all"))
 }
