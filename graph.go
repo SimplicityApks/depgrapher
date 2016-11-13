@@ -168,19 +168,26 @@ func insertIntoString(s *string, offset int, insertion string) *string {
 	return &str
 }
 
+var nodeFinished map[*Node]struct{}
+
 func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modout []*string, height int, width int) {
 	dependencies := g.GetDependencies(n)
-	namelen := len(n.name) + 2
+	name := " " + n.name + " "
+	if _, finished := nodeFinished[n]; finished {
+		name = " &" + n.name + " "
+		dependencies = nil
+	} else {
+		nodeFinished[n] = struct{}{}
+	}
 	if len(dependencies) == 0 {
-		name := " " + n.name + " "
 		if len(out) == 0 {
-			name = strings.Repeat(" ", rightOffset) + name
-			out = append(out, &name)
+			line := strings.Repeat(" ", rightOffset) + name
+			out = append(out, &line)
 		} else {
 			out[0] = insertIntoString(out[0], rightOffset, name)
 		}
 		// we are at the bottom of the graph
-		return out, 1, namelen
+		return out, 1, len(name)
 	} else {
 		if len(out) == 0 {
 			out = append(out, nil)
@@ -198,17 +205,17 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 		}
 		modout = append(modout[:1], out...)
 		// print our name in the middle
-		if namelen > depWidth {
+		if len(name) > depWidth {
 			// shift everything below to the right
-			shiftOffsetLeft := strings.Repeat(" ", (namelen-depWidth)/2)
-			shiftOffsetRight := strings.Repeat(" ", (namelen-depWidth+1)/2)
+			shiftOffsetLeft := strings.Repeat(" ", (len(name)-depWidth)/2)
+			shiftOffsetRight := strings.Repeat(" ", (len(name)-depWidth+1)/2)
 			for _, strptr := range out {
 				strptr = insertIntoString(insertIntoString(strptr, rightOffset+depWidth, shiftOffsetRight), rightOffset, shiftOffsetLeft)
 			}
-			modout[0] = insertIntoString(modout[0], rightOffset, " "+n.name+" ")
-			return modout, height, len(n.name) + 2
+			modout[0] = insertIntoString(modout[0], rightOffset, name)
+			return modout, height, len(name)
 		} else {
-			modout[0] = insertIntoString(modout[0], rightOffset, strings.Repeat(" ", (depWidth-namelen)/2)+" "+n.name+" "+strings.Repeat(" ", (depWidth-namelen+1)/2))
+			modout[0] = insertIntoString(modout[0], rightOffset, strings.Repeat(" ", (depWidth-len(name))/2)+name+strings.Repeat(" ", (depWidth-len(name)+1)/2))
 			return modout, height, depWidth
 		}
 	}
@@ -216,6 +223,7 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 
 // printDepTree pretty prints the dependency tree of the specified startNode to stdout
 func printDepTree(g *Graph, startNode *Node) {
+	nodeFinished = map[*Node]struct{}{}
 	out, _, _ := printDepTreeLevel(g, startNode, make([]*string, 1), 0)
 	for _, lineptr := range out {
 		println(*lineptr)
