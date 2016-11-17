@@ -3,7 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"log"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Node struct {
@@ -27,9 +30,12 @@ func (e *edge) String() string {
 type Graph struct {
 	nodes []*Node
 	edges []*edge
+	mutex sync.Mutex
 }
 
 func (g *Graph) AddEdge(sourceName string, targetName string) {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
 	// add the nodes if they aren't already in place
 	var source, target *Node
 	for _, nptr := range g.nodes {
@@ -48,6 +54,15 @@ func (g *Graph) AddEdge(sourceName string, targetName string) {
 		g.nodes = append(g.nodes, target)
 	}
 	g.edges = append(g.edges, &edge{source: source, target: target})
+}
+
+func (g *Graph) Copy() *Graph {
+	result := newGraph()
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	copy(result.nodes, g.nodes)
+	copy(result.edges, g.edges)
+	return result
 }
 
 func (g *Graph) GetNode(name string) *Node {
@@ -80,7 +95,6 @@ func (g *Graph) GetDependants(n *Node) []*Node {
 }
 
 func (g *Graph) scanDependencies(line string, syntax Syntax) {
-	//sourceSepIndex, infixIndex := strings.Index(line, syntax.sourceDelimiter), strings.Index(line, syntax.infix)
 	infixIndex := strings.Index(line, syntax.infix)
 	sources := strings.Split(line[:infixIndex], syntax.sourceDelimiter)
 	targets := strings.Split(line[infixIndex+len(syntax.infix):], syntax.targetDelimiter)
@@ -101,9 +115,34 @@ func (g *Graph) scanDependencies(line string, syntax Syntax) {
 	}
 }
 
+// executes g.scanDependencies for each task received from tasks
+func scanDependenciesGo(tasks chan string, g *Graph, syntax Syntax) {
+	for task := range tasks {
+		g.scanDependencies(task, syntax)
+	}
+	waitGroup.Done()
+}
+
+var waitGroup sync.WaitGroup
+
+func timeTrack(start time.Time, name string) {
+	elapsed := time.Since(start)
+	log.Printf("%s took %s", name, elapsed)
+}
+
 // FromScanner reads data from the given scanner, building up the dependency tree.
 func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax Syntax) (*Graph, error) {
+	defer timeTrack(time.Now(), "FromScanner")
 	scanner.Split(scanLineWithEscape)
+	// for running concurrently, we'll add a pool of worker goroutines
+	numWorkers := 4
+	tasks := make(chan string, numWorkers)
+	// we need to wait for our goroutines to finish
+	waitGroup = sync.WaitGroup{}
+	waitGroup.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go scanDependenciesGo(tasks, g, syntax)
+	}
 	for scanner.Scan() {
 		if scanner.Err() != nil {
 			return g, scanner.Err()
@@ -113,9 +152,11 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax Syntax) (*Graph, erro
 		infixIndex := strings.Index(line, syntax.infix)
 		suffixIndex := strings.LastIndex(line, syntax.suffix)
 		if prefIndex >= 0 && infixIndex >= 0 && suffixIndex >= 0 {
-			g.scanDependencies(line[prefIndex+len(syntax.prefix):suffixIndex], syntax)
+			tasks <- line[prefIndex+len(syntax.prefix) : suffixIndex]
 		}
 	}
+	close(tasks)
+	waitGroup.Wait()
 	return g, nil
 }
 
@@ -233,10 +274,10 @@ func printDepTree(g *Graph, startNode *Node) {
 // printFullDepTree prints the dependency tree of the whole graph to stdout
 func printFullDepTree(g *Graph) {
 	// make a copy of our graph
-	fullGraph := *g
-	for _, node := range g.nodes {
+	fullGraph := g.Copy()
+	for _, node := range fullGraph.nodes {
 		// TODO add only edges where the graph is separated
 		fullGraph.AddEdge("_all", node.name)
 	}
-	printDepTree(&fullGraph, fullGraph.GetNode("_all"))
+	printDepTree(fullGraph, fullGraph.GetNode("_all"))
 }
