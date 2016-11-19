@@ -57,15 +57,20 @@ func (g *Graph) AddEdge(sourceName string, targetName string) {
 }
 
 func (g *Graph) Copy() *Graph {
-	result := newGraph()
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
+	result := &Graph{
+		nodes: make([]*Node, len(g.nodes)),
+		edges: make([]*edge, len(g.edges)),
+	}
 	copy(result.nodes, g.nodes)
 	copy(result.edges, g.edges)
 	return result
 }
 
 func (g *Graph) GetNode(name string) *Node {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
 	for _, node := range g.nodes {
 		if node.name == name {
 			return node
@@ -76,6 +81,8 @@ func (g *Graph) GetNode(name string) *Node {
 
 func (g *Graph) GetDependencies(n *Node) []*Node {
 	deps := make([]*Node, 0)
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
 	for _, edge := range g.edges {
 		if edge.source == n {
 			deps = append(deps, edge.target)
@@ -86,6 +93,8 @@ func (g *Graph) GetDependencies(n *Node) []*Node {
 
 func (g *Graph) GetDependants(n *Node) []*Node {
 	deps := make([]*Node, 0)
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
 	for _, edge := range g.edges {
 		if edge.target == n {
 			deps = append(deps, edge.source)
@@ -296,9 +305,12 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 }
 
 // printDepTree pretty prints the dependency tree of the specified startNode to stdout
-func printDepTree(g *Graph, startNode *Node) {
+func printDepTree(g *Graph, start *Node) {
+	if start == nil {
+		panic("printDepTree: start should not be nil!")
+	}
 	nodeFinished = map[*Node]struct{}{}
-	out, _, _ := printDepTreeLevel(g, startNode, make([]*string, 1), 0)
+	out, _, _ := printDepTreeLevel(g, start, make([]*string, 1), 0)
 	for _, lineptr := range out {
 		println(*lineptr)
 	}
@@ -306,11 +318,20 @@ func printDepTree(g *Graph, startNode *Node) {
 
 // printFullDepTree prints the dependency tree of the whole graph to stdout
 func printFullDepTree(g *Graph) {
+	if len(g.nodes) == 0 {
+		println("{empty graph}")
+		return
+	}
 	// make a copy of our graph
 	fullGraph := g.Copy()
 	for _, node := range fullGraph.nodes {
-		// TODO add only edges where the graph is separated
-		fullGraph.AddEdge("_all", node.name)
+		if len(fullGraph.GetDependants(node)) == 0 {
+			fullGraph.AddEdge("_all", node.name)
+		}
 	}
-	printDepTree(fullGraph, fullGraph.GetNode("_all"))
+	nodeFinished = map[*Node]struct{}{}
+	out, _, _ := printDepTreeLevel(fullGraph, fullGraph.GetNode("_all"), make([]*string, 1), 0)
+	for _, lineptr := range out[3:] {
+		println(*lineptr)
+	}
 }

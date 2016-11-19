@@ -19,5 +19,5 @@ func main() {
 	println("Reading graph successfull")
 	println(graph.String())
 	println("Here is your dependency tree:")
-	printDepTree(graph, graph.GetNode("s1"))
+	printFullDepTree(graph)
 }
