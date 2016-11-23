@@ -3,10 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"log"
+	"runtime"
 	"strings"
 	"sync"
-	"time"
 )
 
 type Node struct {
@@ -124,39 +123,43 @@ func (g *Graph) scanDependencies(line string, syntax Syntax) {
 	}
 }
 
-// executes g.scanDependencies for each task received from tasks
-func scanDependenciesGo(tasks chan string, g *Graph, syntax Syntax) {
-	for task := range tasks {
-		g.scanDependencies(task, syntax)
-	}
-	waitGroup.Done()
-}
-
-var waitGroup sync.WaitGroup
-
-func timeTrack(start time.Time, name string) {
-	elapsed := time.Since(start)
-	log.Printf("%s took %s", name, elapsed)
-}
-
 // FromScanner reads data from the given scanner, building up the dependency tree.
 func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax Syntax) (*Graph, error) {
-	defer timeTrack(time.Now(), "FromScanner")
 	scanner.Split(scanLineWithEscape)
+	if syntax.GraphPrefix != "" {
+		for scanner.Scan() {
+			if scanner.Err() != nil {
+				return g, scanner.Err()
+			}
+			if strings.Contains(scanner.Text(), syntax.GraphPrefix) {
+				break
+			}
+		}
+	}
 	// for running concurrently, we'll add a pool of worker goroutines
-	numWorkers := 4
-	tasks := make(chan string, numWorkers)
+	numWorkers := runtime.GOMAXPROCS(0)
 	// we need to wait for our goroutines to finish
-	waitGroup = sync.WaitGroup{}
+	waitGroup := sync.WaitGroup{}
 	waitGroup.Add(numWorkers)
+	defer waitGroup.Wait()
+	tasks := make(chan string, numWorkers)
+	defer close(tasks)
 	for i := 0; i < numWorkers; i++ {
-		go scanDependenciesGo(tasks, g, syntax)
+		go func() {
+			defer waitGroup.Done()
+			for task := range tasks {
+				g.scanDependencies(task, syntax)
+			}
+		}()
 	}
 	for scanner.Scan() {
 		if scanner.Err() != nil {
 			return g, scanner.Err()
 		}
-		line := string(scanner.Text())
+		line := scanner.Text()
+		if syntax.GraphSuffix != "" && strings.Contains(line, syntax.GraphSuffix) {
+			break
+		}
 		prefIndex := strings.Index(line, syntax.EdgePrefix)
 		infixIndex := strings.Index(line, syntax.EdgeInfix)
 		suffixIndex := strings.LastIndex(line, syntax.EdgeSuffix)
@@ -164,8 +167,6 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax Syntax) (*Graph, erro
 			tasks <- line[prefIndex+len(syntax.EdgePrefix) : suffixIndex]
 		}
 	}
-	close(tasks)
-	waitGroup.Wait()
 	return g, nil
 }
 
