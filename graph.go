@@ -102,7 +102,7 @@ func (g *Graph) GetDependants(n *Node) []*Node {
 	return deps
 }
 
-func (g *Graph) scanDependencies(line string, syntax Syntax) {
+func (g *Graph) scanDependencies(line string, syntax *Syntax) {
 	infixIndex := strings.Index(line, syntax.EdgeInfix)
 	sources := strings.Split(line[:infixIndex], syntax.SourceDelimiter)
 	targets := strings.Split(line[infixIndex+len(syntax.EdgeInfix):], syntax.TargetDelimiter)
@@ -124,31 +124,26 @@ func (g *Graph) scanDependencies(line string, syntax Syntax) {
 }
 
 // FromScanner reads data from the given scanner, building up the dependency tree.
-func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax Syntax) (*Graph, error) {
+func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax ...*Syntax) (*Graph, error) {
 	scanner.Split(scanLineWithEscape)
-	if syntax.GraphPrefix != "" {
-		for scanner.Scan() {
-			if scanner.Err() != nil {
-				return g, scanner.Err()
-			}
-			if strings.Contains(scanner.Text(), syntax.GraphPrefix) {
-				break
-			}
-		}
-	}
+	activeSyntaxes := make(map[*Syntax]struct{}, len(syntax))
 	// for running concurrently, we'll add a pool of worker goroutines
 	numWorkers := runtime.GOMAXPROCS(0)
 	// we need to wait for our goroutines to finish
 	waitGroup := sync.WaitGroup{}
 	waitGroup.Add(numWorkers)
 	defer waitGroup.Wait()
-	tasks := make(chan string, numWorkers)
+	type Task struct {
+		line   string
+		syntax *Syntax
+	}
+	tasks := make(chan Task, numWorkers)
 	defer close(tasks)
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			defer waitGroup.Done()
 			for task := range tasks {
-				g.scanDependencies(task, syntax)
+				g.scanDependencies(task.line, task.syntax)
 			}
 		}()
 	}
@@ -157,14 +152,21 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax Syntax) (*Graph, erro
 			return g, scanner.Err()
 		}
 		line := scanner.Text()
-		if syntax.GraphSuffix != "" && strings.Contains(line, syntax.GraphSuffix) {
-			break
-		}
-		prefIndex := strings.Index(line, syntax.EdgePrefix)
-		infixIndex := strings.Index(line, syntax.EdgeInfix)
-		suffixIndex := strings.LastIndex(line, syntax.EdgeSuffix)
-		if prefIndex >= 0 && infixIndex >= 0 && suffixIndex >= 0 {
-			tasks <- line[prefIndex+len(syntax.EdgePrefix) : suffixIndex]
+		for _, syntax := range syntax {
+			if strings.Contains(line, syntax.GraphPrefix) {
+				activeSyntaxes[syntax] = struct{}{}
+			} else if _, active := activeSyntaxes[syntax]; !active {
+				continue
+			}
+			if syntax.GraphSuffix != "" && strings.Contains(line, syntax.GraphSuffix) {
+				delete(activeSyntaxes, syntax)
+			}
+			prefIndex := strings.Index(line, syntax.EdgePrefix)
+			infixIndex := strings.Index(line, syntax.EdgeInfix)
+			suffixIndex := strings.LastIndex(line, syntax.EdgeSuffix)
+			if prefIndex >= 0 && infixIndex >= 0 && suffixIndex >= 0 {
+				tasks <- Task{line[prefIndex+len(syntax.EdgePrefix) : suffixIndex], syntax}
+			}
 		}
 	}
 	return g, nil

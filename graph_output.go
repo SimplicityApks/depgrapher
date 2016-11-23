@@ -137,7 +137,7 @@ func printFullDepTree(g *Graph) {
 	}
 }
 
-func writeGraph(g *Graph, writer io.Writer, syntax Syntax) {
+func writeGraph(g *Graph, writer io.Writer, syntax *Syntax) {
 	writer.Write(append([]byte(syntax.GraphPrefix), '\n'))
 	for _, node := range g.nodes {
 		dependencies := g.GetDependencies(node)
