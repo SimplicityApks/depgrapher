@@ -32,6 +32,29 @@ var MakefileSyntax = &Syntax{
 	StripWhitespace: true,
 }
 
+var MakeCallSyntax = []*Syntax{
+	{
+		GraphPrefix:     "",
+		EdgePrefix:      "$(call DEPEND_ALL,",
+		SourceDelimiter: "",
+		EdgeInfix:       ",",
+		TargetDelimiter: ",",
+		EdgeSuffix:      ")",
+		GraphSuffix:     "",
+		StripWhitespace: true,
+	},
+	{
+		GraphPrefix:     "",
+		EdgePrefix:      "$(call ALL_SPECS,",
+		SourceDelimiter: ",",
+		EdgeInfix:       "):",
+		TargetDelimiter: " ",
+		EdgeSuffix:      "",
+		GraphSuffix:     "",
+		StripWhitespace: true,
+	},
+}
+
 var DotSyntax = &Syntax{
 	GraphPrefix:     "digraph{",
 	EdgePrefix:      "",
@@ -56,6 +79,8 @@ func ParseSyntax(s string) ([]*Syntax, error) {
 			switch token := s[:index]; token {
 			case "Makefile", "makefile", "Make", "make", "m":
 				result = append(result, MakefileSyntax)
+			case "MakeCall", "makecall", "c":
+				result = append(result, MakeCallSyntax...)
 			case "Dot", "dot", "d":
 				result = append(result, DotSyntax)
 			default:
@@ -83,6 +108,8 @@ func ParseSyntax(s string) ([]*Syntax, error) {
 	switch s {
 	case "Makefile", "makefile", "Make", "make", "m":
 		result = append(result, MakefileSyntax)
+	case "MakeCall", "makecall", "c":
+		result = append(result, MakeCallSyntax...)
 	case "Dot", "dot", "d":
 		result = append(result, DotSyntax)
 	default:

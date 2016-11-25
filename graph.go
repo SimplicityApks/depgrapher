@@ -104,7 +104,10 @@ func (g *Graph) GetDependants(n *Node) []*Node {
 
 func (g *Graph) scanDependencies(line string, syntax *Syntax) {
 	infixIndex := strings.Index(line, syntax.EdgeInfix)
-	sources := strings.Split(line[:infixIndex], syntax.SourceDelimiter)
+	sources := []string{line[:infixIndex]}
+	if syntax.SourceDelimiter != "" {
+		sources = strings.Split(line[:infixIndex], syntax.SourceDelimiter)
+	}
 	targets := strings.Split(line[infixIndex+len(syntax.EdgeInfix):], syntax.TargetDelimiter)
 	for _, source := range sources {
 		if syntax.StripWhitespace {
@@ -125,6 +128,9 @@ func (g *Graph) scanDependencies(line string, syntax *Syntax) {
 
 // FromScanner reads data from the given scanner, building up the dependency tree.
 func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax ...*Syntax) (*Graph, error) {
+	if len(syntax) == 0 {
+		panic("FromScanner: At least one syntax required!")
+	}
 	scanner.Split(scanLineWithEscape)
 	activeSyntaxes := make(map[*Syntax]struct{}, len(syntax))
 	// for running concurrently, we'll add a pool of worker goroutines
@@ -166,6 +172,7 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax ...*Syntax) (*Graph, 
 			suffixIndex := strings.LastIndex(line, syntax.EdgeSuffix)
 			if prefIndex >= 0 && infixIndex >= 0 && suffixIndex >= 0 {
 				tasks <- Task{line[prefIndex+len(syntax.EdgePrefix) : suffixIndex], syntax}
+				break
 			}
 		}
 	}
@@ -173,6 +180,9 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax ...*Syntax) (*Graph, 
 }
 
 func (g *Graph) String() string {
+	if len(g.nodes) == 0 {
+		return "{empty graph}"
+	}
 	var buffer bytes.Buffer
 	for _, edge := range g.edges {
 		buffer.WriteString(edge.String())
