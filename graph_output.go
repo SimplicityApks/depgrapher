@@ -146,12 +146,12 @@ func writeGraph(g *Graph, writer io.Writer, syntax *Syntax) {
 	for _, node := range g.nodes {
 		dependencies := g.GetDependencies(node)
 		if len(dependencies) > 0 {
-			writer.Write([]byte(syntax.EdgePrefix + node.String() + syntax.EdgeInfix))
+			writer.Write([]byte(syntax.EdgePrefix + "\"" + node.String() + "\"" + syntax.EdgeInfix))
 			for index, dep := range dependencies {
-				writer.Write([]byte(dep.String()))
+				writer.Write([]byte("\"" + dep.String() + "\""))
 				if index < len(dependencies)-1 {
 					if syntax.TargetDelimiter == "" {
-						writer.Write(append([]byte(syntax.EdgeSuffix + string('\n') + syntax.EdgePrefix + node.String() + syntax.EdgeInfix)))
+						writer.Write(append([]byte(syntax.EdgeSuffix + string('\n') + syntax.EdgePrefix + "\"" + node.String() + "\"" + syntax.EdgeInfix)))
 					} else {
 						writer.Write([]byte(syntax.TargetDelimiter))
 					}

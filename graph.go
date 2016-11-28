@@ -206,10 +206,14 @@ func newGraph() *Graph {
 func scanLineWithEscape(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	advance, token, err = bufio.ScanLines(data, atEOF)
 	for err == nil && len(token) > 0 && token[len(token)-1] == '\\' {
-		secondAdvance, secondToken, secondErr := bufio.ScanLines(data, atEOF)
-		advance += secondAdvance
-		token = append(token, secondToken...)
-		err = secondErr
+		// omit the trailing backslash
+		token = token[:len(token)-1]
+		nextData := data[advance:]
+		var nextAdvance int
+		var nextToken []byte
+		nextAdvance, nextToken, err = bufio.ScanLines(nextData, atEOF)
+		advance += nextAdvance
+		token = append(token, nextToken...)
 	}
 	return
 }
