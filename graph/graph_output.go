@@ -15,7 +15,7 @@ import (
 )
 
 // nodeFinished is a set that contains all the nodes which have already been printed. This is global for simplicity (& laziness).
-var nodeFinished map[*Node]struct{}
+var nodeFinished map[Node]struct{}
 
 func insertIntoString(s *string, offset int, insertion string) *string {
 	var str string
@@ -48,11 +48,11 @@ func printDepTreeArrows(line1, line2 *string, fieldstart, fieldlen int, midpoint
 	return line1, line2
 }
 
-func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modout []*string, width int) {
-	dependencies := g.GetDependencies(n)
-	name := " " + n.name + " "
+func printDepTreeLevel(g Graph, n Node, out []*string, rightOffset int) (modout []*string, width int) {
+	dependencies := g.GetDependencies(n.String())
+	name := " " + n.String() + " "
 	if _, finished := nodeFinished[n]; finished {
-		name = " &" + n.name + " "
+		name = " &" + n.String() + " "
 		dependencies = nil
 	} else {
 		nodeFinished[n] = struct{}{}
@@ -111,11 +111,11 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 }
 
 // PrintDepTree pretty prints the dependency tree of the specified startNode to stdout.
-func PrintDepTree(g *Graph, start *Node) {
+func PrintDepTree(g Graph, start Node) {
 	if start == nil {
 		panic("printDepTree: start should not be nil!")
 	}
-	nodeFinished = map[*Node]struct{}{}
+	nodeFinished = map[Node]struct{}{}
 	out := wrapToStdout(printDepTreeLevel(g, start, make([]*string, 1), 0))
 	for _, lineptr := range out {
 		println(*lineptr)
@@ -123,19 +123,19 @@ func PrintDepTree(g *Graph, start *Node) {
 }
 
 // PrintFullDepTree prints the dependency tree of the whole graph to stdout.
-func PrintFullDepTree(g *Graph) {
-	if len(g.nodes) == 0 {
+func PrintFullDepTree(g Graph) {
+	if len(g.GetNodes()) == 0 {
 		println("{empty graph}")
 		return
 	}
 	// make a copy of our graph
 	fullGraph := g.Copy()
-	for _, node := range fullGraph.nodes {
-		if len(fullGraph.GetDependants(node)) == 0 {
-			fullGraph.AddEdge("_all", node.name)
+	for _, n := range fullGraph.GetNodes() {
+		if len(fullGraph.GetDependants(n.String())) == 0 {
+			fullGraph.AddEdge(node("_all"), n)
 		}
 	}
-	nodeFinished = map[*Node]struct{}{}
+	nodeFinished = map[Node]struct{}{}
 	out, width := printDepTreeLevel(fullGraph, fullGraph.GetNode("_all"), make([]*string, 1), 0)
 	out = wrapToStdout(out[3:], width)
 	for _, lineptr := range out {
@@ -187,10 +187,10 @@ func getStdoutWidth() (width int, err error) {
 }
 
 // WriteGraph writes a machine-readable version of the given graph matching the given syntax to the given writer.
-func WriteGraph(g *Graph, writer io.Writer, syntax *syntax.Syntax) {
+func WriteGraph(g Graph, writer io.Writer, syntax *syntax.Syntax) {
 	writer.Write(append([]byte(syntax.GraphPrefix), '\n'))
-	for _, node := range g.nodes {
-		dependencies := g.GetDependencies(node)
+	for _, node := range g.GetNodes() {
+		dependencies := g.GetDependencies(node.String())
 		if len(dependencies) > 0 {
 			writer.Write([]byte(syntax.EdgePrefix + "\"" + node.String() + "\"" + syntax.EdgeInfix))
 			for index, dep := range dependencies {
@@ -210,6 +210,6 @@ func WriteGraph(g *Graph, writer io.Writer, syntax *syntax.Syntax) {
 }
 
 // WriteDot writes the given graph to the given io.Writer in dot language syntax.
-func WriteDot(g *Graph, writer io.Writer) {
+func WriteDot(g Graph, writer io.Writer) {
 	WriteGraph(g, writer, syntax.Dot)
 }

@@ -25,7 +25,7 @@ func testGraph() {
 }
 
 // parseFiles parses the given files with the given syntaxes and returns the generated graphs
-func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g *graph.Graph, err error) {
+func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g graph.Graph, err error) {
 	readers := make([]io.Reader, len(filenames))
 	for index, filename := range filenames {
 		readers[index], err = os.Open(filename)
@@ -47,7 +47,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	var g *graph.Graph
+	var g graph.Graph
 	g, err = parseFiles(filenames, s...)
 	if err != nil {
 		panic(err)
