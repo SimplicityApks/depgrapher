@@ -7,23 +7,25 @@ package main
 import (
 	"bufio"
 	"flag"
+	"github.com/SimplicityApks/depgrapher/graph"
+	"github.com/SimplicityApks/depgrapher/syntax"
 	"io"
 	"os"
 	"strings"
 )
 
 func testGraph() {
-	graph, _ := newGraph().FromScanner(bufio.NewScanner(strings.NewReader("s1 s2: dep1 dep2\ns1: dep3\ndep3 dep2: dp4 dep5 dp6\ndep1:dp0\ndep5:dep7")), MakefileSyntax)
+	g, _ := graph.New().FromScanner(bufio.NewScanner(strings.NewReader("s1 s2: dep1 dep2\ns1: dep3\ndep3 dep2: dp4 dep5 dp6\ndep1:dp0\ndep5:dep7")), syntax.Makefile)
 	println("Reading graph successfull")
-	println(graph.String())
+	println(g.String())
 	println("Here is your dependency tree:")
-	printFullDepTree(graph)
+	graph.PrintFullDepTree(g)
 	println("Here is the dot export")
-	writeDot(graph, os.Stdout)
+	graph.WriteDot(g, os.Stdout)
 }
 
 // parseFiles parses the given files with the given syntaxes and returns the generated graphs
-func parseFiles(filenames []string, syntax ...*Syntax) (g *Graph, err error) {
+func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g *graph.Graph, err error) {
 	readers := make([]io.Reader, len(filenames))
 	for index, filename := range filenames {
 		readers[index], err = os.Open(filename)
@@ -32,7 +34,7 @@ func parseFiles(filenames []string, syntax ...*Syntax) (g *Graph, err error) {
 		}
 	}
 	scanner := bufio.NewScanner(io.MultiReader(readers...))
-	return newGraph().FromScanner(scanner, syntax...)
+	return graph.New().FromScanner(scanner, syntax...)
 }
 
 func main() {
@@ -41,23 +43,23 @@ func main() {
 	outfilename := flag.String("outfile", "", "File to write a dot representation of the dependency tree")
 	flag.Parse()
 	filenames := flag.Args()
-	syntax, err := ParseSyntax(*syntaxString)
+	s, err := syntax.Parse(*syntaxString)
 	if err != nil {
 		panic(err)
 	}
-	var graph *Graph
-	graph, err = parseFiles(filenames, syntax...)
+	var g *graph.Graph
+	g, err = parseFiles(filenames, s...)
 	if err != nil {
 		panic(err)
 	}
 	if *outfilename == "stdout" {
-		writeDot(graph, os.Stdout)
+		graph.WriteDot(g, os.Stdout)
 	} else if *outfilename != "" {
 		var outfile io.Writer
 		outfile, err = os.Create(*outfilename)
-		writeDot(graph, outfile)
+		graph.WriteDot(g, outfile)
 	} else {
 		// write ascii graph to stdout
-		printFullDepTree(graph)
+		graph.PrintFullDepTree(g)
 	}
 }

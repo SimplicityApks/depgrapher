@@ -2,11 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-package main
+// Package graph contains the graph data structure to represent dependency graphs.
+package graph
 
 import (
 	"bufio"
 	"bytes"
+	"github.com/SimplicityApks/depgrapher/syntax"
 	"runtime"
 	"strings"
 	"sync"
@@ -106,7 +108,7 @@ func (g *Graph) GetDependants(n *Node) []*Node {
 	return deps
 }
 
-func (g *Graph) scanDependencies(line string, syntax *Syntax) {
+func (g *Graph) scanDependencies(line string, syntax *syntax.Syntax) {
 	infixIndex := strings.Index(line, syntax.EdgeInfix)
 	sources := []string{line[:infixIndex]}
 	if syntax.SourceDelimiter != "" {
@@ -131,12 +133,12 @@ func (g *Graph) scanDependencies(line string, syntax *Syntax) {
 }
 
 // FromScanner reads data from the given scanner, building up the dependency tree.
-func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax ...*Syntax) (*Graph, error) {
-	if len(syntax) == 0 {
+func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) (*Graph, error) {
+	if len(syntaxes) == 0 {
 		panic("FromScanner: At least one syntax required!")
 	}
 	scanner.Split(scanLineWithEscape)
-	activeSyntaxes := make(map[*Syntax]struct{}, len(syntax))
+	activeSyntaxes := make(map[*syntax.Syntax]struct{}, len(syntaxes))
 	// for running concurrently, we'll add a pool of worker goroutines
 	numWorkers := runtime.GOMAXPROCS(0)
 	// we need to wait for our goroutines to finish
@@ -145,7 +147,7 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax ...*Syntax) (*Graph, 
 	defer waitGroup.Wait()
 	type Task struct {
 		line   string
-		syntax *Syntax
+		syntax *syntax.Syntax
 	}
 	tasks := make(chan Task, numWorkers)
 	defer close(tasks)
@@ -162,7 +164,7 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntax ...*Syntax) (*Graph, 
 			return g, scanner.Err()
 		}
 		line := scanner.Text()
-		for _, syntax := range syntax {
+		for _, syntax := range syntaxes {
 			if strings.Contains(line, syntax.GraphPrefix) {
 				activeSyntaxes[syntax] = struct{}{}
 			} else if _, active := activeSyntaxes[syntax]; !active {
@@ -195,8 +197,8 @@ func (g *Graph) String() string {
 	return buffer.String()
 }
 
-// newGraph creates a new, empty graph
-func newGraph() *Graph {
+// New creates a new, empty graph
+func New() *Graph {
 	return &Graph{
 		nodes: make([]*Node, 0),
 		edges: make([]*edge, 0),

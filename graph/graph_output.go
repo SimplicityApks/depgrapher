@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Contains utility functions for printing graphs
-package main
+// Contains utility functions for printing graphs.
+package graph
 
 import (
+	"github.com/SimplicityApks/depgrapher/syntax"
 	"io"
 	"os"
 	"os/exec"
@@ -13,7 +14,7 @@ import (
 	"strings"
 )
 
-// nodeFinished is a set that contains all the nodes which have already been printed. This is global for simplicity (& laziness)
+// nodeFinished is a set that contains all the nodes which have already been printed. This is global for simplicity (& laziness).
 var nodeFinished map[*Node]struct{}
 
 func insertIntoString(s *string, offset int, insertion string) *string {
@@ -109,8 +110,8 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 	return modout, len(name)
 }
 
-// printDepTree pretty prints the dependency tree of the specified startNode to stdout
-func printDepTree(g *Graph, start *Node) {
+// PrintDepTree pretty prints the dependency tree of the specified startNode to stdout.
+func PrintDepTree(g *Graph, start *Node) {
 	if start == nil {
 		panic("printDepTree: start should not be nil!")
 	}
@@ -121,8 +122,8 @@ func printDepTree(g *Graph, start *Node) {
 	}
 }
 
-// printFullDepTree prints the dependency tree of the whole graph to stdout
-func printFullDepTree(g *Graph) {
+// PrintFullDepTree prints the dependency tree of the whole graph to stdout.
+func PrintFullDepTree(g *Graph) {
 	if len(g.nodes) == 0 {
 		println("{empty graph}")
 		return
@@ -142,7 +143,7 @@ func printFullDepTree(g *Graph) {
 	}
 }
 
-// wrapToStdout wraps the given output array to the size of os.Stdout
+// wrapToStdout wraps the given output array to the size of os.Stdout.
 func wrapToStdout(out []*string, width int) []*string {
 	// wrap the lines if our output buffer is too small for the width of the full graph
 	stdoutWidth, err := getStdoutWidth()
@@ -173,7 +174,7 @@ func wrapToStdout(out []*string, width int) []*string {
 	return out
 }
 
-// getStdoutWidth returns the width of the stdout window
+// getStdoutWidth returns the width of the stdout window.
 func getStdoutWidth() (width int, err error) {
 	cmd := exec.Command("stty", "size")
 	cmd.Stdin = os.Stdin
@@ -185,7 +186,8 @@ func getStdoutWidth() (width int, err error) {
 	return strconv.Atoi(widthstring[:len(widthstring)-1])
 }
 
-func writeGraph(g *Graph, writer io.Writer, syntax *Syntax) {
+// WriteGraph writes a machine-readable version of the given graph matching the given syntax to the given writer.
+func WriteGraph(g *Graph, writer io.Writer, syntax *syntax.Syntax) {
 	writer.Write(append([]byte(syntax.GraphPrefix), '\n'))
 	for _, node := range g.nodes {
 		dependencies := g.GetDependencies(node)
@@ -207,7 +209,7 @@ func writeGraph(g *Graph, writer io.Writer, syntax *Syntax) {
 	writer.Write([]byte(syntax.GraphSuffix))
 }
 
-// writeDot writes the given graph to the given io.Writer in dot language syntax
-func writeDot(g *Graph, writer io.Writer) {
-	writeGraph(g, writer, DotSyntax)
+// WriteDot writes the given graph to the given io.Writer in dot language syntax.
+func WriteDot(g *Graph, writer io.Writer) {
+	WriteGraph(g, writer, syntax.Dot)
 }

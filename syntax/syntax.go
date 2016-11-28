@@ -2,8 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Contains the syntax for reading and writing graphs to files
-package main
+// Package syntax contains the syntax for reading and writing graphs to files.
+// It also comes with predefined variables for common syntaxes.
+// The syntax struct assumes that every edge is written in a single line.
+package syntax
 
 import (
 	"errors"
@@ -13,7 +15,6 @@ import (
 // to be used in Syntax to indicate that the field is not available in the syntax
 const IGNOREFIELD = ""
 
-// assumes that every edge is written in a single line
 type Syntax struct {
 	GraphPrefix     string
 	EdgePrefix      string
@@ -25,7 +26,7 @@ type Syntax struct {
 	StripWhitespace bool
 }
 
-var MakefileSyntax = &Syntax{
+var Makefile = &Syntax{
 	GraphPrefix:     "",
 	EdgePrefix:      "",
 	SourceDelimiter: " ",
@@ -36,7 +37,7 @@ var MakefileSyntax = &Syntax{
 	StripWhitespace: true,
 }
 
-var MakeCallSyntax = []*Syntax{
+var MakeCall = []*Syntax{
 	{
 		GraphPrefix:     "",
 		EdgePrefix:      "$(call DEPEND_ALL,",
@@ -59,7 +60,7 @@ var MakeCallSyntax = []*Syntax{
 	},
 }
 
-var DotSyntax = &Syntax{
+var Dot = &Syntax{
 	GraphPrefix:     "digraph{",
 	EdgePrefix:      "",
 	SourceDelimiter: "",
@@ -70,7 +71,8 @@ var DotSyntax = &Syntax{
 	StripWhitespace: true,
 }
 
-func ParseSyntax(s string) ([]*Syntax, error) {
+// Parse parses new syntaxes from the given string, supporting various formats.
+func Parse(s string) ([]*Syntax, error) {
 	result := make([]*Syntax, 0)
 	// supported strings (e.g.):
 	// Makefile
@@ -82,11 +84,11 @@ func ParseSyntax(s string) ([]*Syntax, error) {
 		case ',':
 			switch token := s[:index]; token {
 			case "Makefile", "makefile", "Make", "make", "m":
-				result = append(result, MakefileSyntax)
+				result = append(result, Makefile)
 			case "MakeCall", "makecall", "c":
-				result = append(result, MakeCallSyntax...)
+				result = append(result, MakeCall...)
 			case "Dot", "dot", "d":
-				result = append(result, DotSyntax)
+				result = append(result, Dot)
 			default:
 				return result, errors.New("Invalid syntax name: " + token)
 			}
@@ -111,11 +113,11 @@ func ParseSyntax(s string) ([]*Syntax, error) {
 	// and parse the last token
 	switch s {
 	case "Makefile", "makefile", "Make", "make", "m":
-		result = append(result, MakefileSyntax)
+		result = append(result, Makefile)
 	case "MakeCall", "makecall", "c":
-		result = append(result, MakeCallSyntax...)
+		result = append(result, MakeCall...)
 	case "Dot", "dot", "d":
-		result = append(result, DotSyntax)
+		result = append(result, Dot)
 	default:
 		return result, errors.New("Invalid syntax name: " + s)
 	}
