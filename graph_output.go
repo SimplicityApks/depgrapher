@@ -7,6 +7,9 @@ package main
 
 import (
 	"io"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -44,7 +47,7 @@ func printDepTreeArrows(line1, line2 *string, fieldstart, fieldlen int, midpoint
 	return line1, line2
 }
 
-func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modout []*string, height int, width int) {
+func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modout []*string, width int) {
 	dependencies := g.GetDependencies(n)
 	name := " " + n.name + " "
 	if _, finished := nodeFinished[n]; finished {
@@ -61,7 +64,7 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 			out[0] = insertIntoString(out[0], rightOffset, name)
 		}
 		// we are at the bottom of the graph
-		return out, 1, len(name)
+		return out, len(name)
 	}
 	// add two lines for the arrows
 	for len(out) < 3 {
@@ -71,16 +74,13 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 
 	out = out[3:]
 	// we have some dependencies, let us print them
-	var depWidth, locHeight, locWidth int
+	var depWidth, locWidth int
 	// save the midpoints to connect the arrows to
 	depMids := make([]int, len(dependencies))
 	for i, dep := range dependencies {
-		out, locHeight, locWidth = printDepTreeLevel(g, dep, out, rightOffset+depWidth)
+		out, locWidth = printDepTreeLevel(g, dep, out, rightOffset+depWidth)
 		depMids[i] = rightOffset + depWidth + locWidth/2
 		depWidth += locWidth
-		if height < locHeight {
-			height = locHeight
-		}
 	}
 
 	modout = append(modout[:3], out...)
@@ -106,7 +106,7 @@ func printDepTreeLevel(g *Graph, n *Node, out []*string, rightOffset int) (modou
 		name = strings.Repeat(" ", (depWidth-len(name))/2) + name + strings.Repeat(" ", (depWidth-len(name)+1)/2)
 	}
 	modout[0] = insertIntoString(modout[0], rightOffset, name)
-	return modout, height, len(name)
+	return modout, len(name)
 }
 
 // printDepTree pretty prints the dependency tree of the specified startNode to stdout
@@ -115,7 +115,7 @@ func printDepTree(g *Graph, start *Node) {
 		panic("printDepTree: start should not be nil!")
 	}
 	nodeFinished = map[*Node]struct{}{}
-	out, _, _ := printDepTreeLevel(g, start, make([]*string, 1), 0)
+	out := wrapToStdout(printDepTreeLevel(g, start, make([]*string, 1), 0))
 	for _, lineptr := range out {
 		println(*lineptr)
 	}
@@ -135,10 +135,54 @@ func printFullDepTree(g *Graph) {
 		}
 	}
 	nodeFinished = map[*Node]struct{}{}
-	out, _, _ := printDepTreeLevel(fullGraph, fullGraph.GetNode("_all"), make([]*string, 1), 0)
-	for _, lineptr := range out[3:] {
+	out, width := printDepTreeLevel(fullGraph, fullGraph.GetNode("_all"), make([]*string, 1), 0)
+	out = wrapToStdout(out[3:], width)
+	for _, lineptr := range out {
 		println(*lineptr)
 	}
+}
+
+// wrapToStdout wraps the given output array to the size of os.Stdout
+func wrapToStdout(out []*string, width int) []*string {
+	// wrap the lines if our output buffer is too small for the width of the full graph
+	stdoutWidth, err := getStdoutWidth()
+	if err != nil {
+		panic("printDepTree: unable to get size of stdout: " + err.Error())
+	}
+	if stdoutWidth <= 0 { // some terminals have approximately infinite buffer size
+		println("printDepTree: size of stdout is zero!")
+		return out
+	}
+	startHeight := 0
+	for width > stdoutWidth {
+		emptyLine := ""
+		out = append(out, &emptyLine)
+		height := len(out)
+		// TODO: think of a nicer wrapping method
+		for index := startHeight; index < height; index++ {
+			line := *out[index]
+			if len(line) > stdoutWidth {
+				part1, part2 := line[:stdoutWidth], line[stdoutWidth:]
+				out[index] = &part1
+				out = append(out, &part2)
+			}
+		}
+		startHeight = height
+		width -= stdoutWidth
+	}
+	return out
+}
+
+// getStdoutWidth returns the width of the stdout window
+func getStdoutWidth() (width int, err error) {
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = os.Stdin
+	out, err := cmd.Output()
+	if err != nil {
+		return -1, err
+	}
+	widthstring := strings.Split(string(out), " ")[1]
+	return strconv.Atoi(widthstring[:len(widthstring)-1])
 }
 
 func writeGraph(g *Graph, writer io.Writer, syntax *Syntax) {
