@@ -49,6 +49,10 @@ type Interface interface {
 	AddEdge(source, target Node)
 	// HasEdge returns true if the graph has an edge from the source Node to the target Node, false otherwise.
 	HasEdge(source, target string) bool
+	// RemoveEdge removes the edge from the source Node to the target Node.
+	// The nodes are removed as well if they don't have any other dependencies or dependants.
+	// Returns false if the graph didn't have an edge from source to target, true otherwise.
+	RemoveEdge(source, target string) bool
 	// GetDependencies returns a slice containing all dependencies of the Node with the given string.
 	GetDependencies(node string) []Node
 	// GetDependencies returns a slice containing all dependants of the Node with the given string.
@@ -61,6 +65,8 @@ type Interface interface {
 // Graph represents the dependency graph in memory. It internally uses a mutex to make read and write access concurrency-safe
 // It satisfies the graph.Interface and fmt.Stringer interfaces.
 // The zero value is an empty graph with no dependencies.
+//
+// This implementation prefers fast(-ish) node lookups over edge removals because it keeps a list of all nodes ready.
 type Graph struct {
 	nodes []Node
 	edges []edge
@@ -112,6 +118,45 @@ func (g *Graph) HasEdge(source, target string) bool {
 	defer g.mutex.Unlock()
 	for _, edge := range g.edges {
 		if edge.source.String() == source && edge.target.String() == target {
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveEdge removes the edge from the source Node to the target Node.
+// The nodes are removed as well if they don't have any other dependencies or dependants.
+// Returns false if the graph didn't have an edge from source to target, true otherwise.
+func (g *Graph) RemoveEdge(source, target string) bool {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	for index, e := range g.edges {
+		if e.source.String() == source && e.target.String() == target {
+			// delete without preserving order as it is faster
+			last := len(g.edges) - 1
+			g.edges[index] = g.edges[last]
+			// set the last edge to nil so the nodes can be garbage collected
+			g.edges[last] = edge{}
+			g.edges = g.edges[:last]
+			// remove the nodes as well if they have no reason to live any more
+			if len(g.GetDependants(source)) == 0 && len(g.GetDependencies(source)) == 0 {
+				g.deleteNode(e.source)
+			}
+			if len(g.GetDependants(target)) == 0 && len(g.GetDependencies(target)) == 0 {
+				g.deleteNode(e.target)
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func (g *Graph) deleteNode(n Node) bool {
+	for index, current := range g.nodes {
+		if current == n {
+			last := len(g.nodes) - 1
+			g.nodes[index] = g.nodes[last]
+			g.nodes = g.nodes[:last]
 			return true
 		}
 	}
