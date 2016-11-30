@@ -21,7 +21,7 @@ import (
 // The String() method call should be fast (ideally inline), as it will be called often!
 type Node fmt.Stringer
 
-// node is a simple string type, created only by the graph input methods.
+// node is a simple string type, created only by the Graph input methods.
 type node string
 
 func (s node) String() string {
@@ -37,35 +37,38 @@ func (e *edge) String() string {
 	return e.source.String() + " => " + e.target.String()
 }
 
-// Graph is the interface for a graph-like data structure.
-type Graph interface {
-	// GetNode returns the Node with the specified name, or nil if the name couldn't be found in the Graph.
+// Interface defines a basic graph-like data structure.
+// The stored data is accessed by the String() method, so every Node needs to implement fmt.Stringer.
+type Interface interface {
+	// GetNode returns the Node with the specified name, or nil if the name couldn't be found in the graph.
 	GetNode(name string) Node
-	// GetNodes returns all Node objects saved in the Graph as a slice. If the Graph is empty, an empty slice is returned.
+	// GetNodes returns all Node objects saved in the graph as a slice. If the graph is empty, an empty slice is returned.
 	GetNodes() []Node
 
-	// AddEdge adds a new edge from source to target to the Graph.
+	// AddEdge adds a new edge from source to target to the graph. The nodes are added to the graph if they were not present.
 	AddEdge(source, target Node)
-	// HasEdge returns true if the Graph has an edge from the source Node to the target Node, false otherwise.
+	// HasEdge returns true if the graph has an edge from the source Node to the target Node, false otherwise.
 	HasEdge(source, target string) bool
 	// GetDependencies returns a slice containing all dependencies of the Node with the given string.
 	GetDependencies(node string) []Node
 	// GetDependencies returns a slice containing all dependants of the Node with the given string.
 	GetDependants(node string) []Node
 
-	// Copy returns a deep copy of the Graph.
-	Copy() Graph
+	// Copy returns a deep copy of the graph.
+	Copy() Interface
 }
 
-// graph represents the read dependency graph in memory. It satisfies the Graph and fmt.Stringer interfaces
-type graph struct {
+// Graph represents the dependency graph in memory. It internally uses a mutex to make read and write access concurrency-safe
+// It satisfies the graph.Interface and fmt.Stringer interfaces.
+// The zero value is an empty graph with no dependencies.
+type Graph struct {
 	nodes []Node
 	edges []edge
 	mutex sync.Mutex
 }
 
 // GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
-func (g *graph) GetNode(name string) Node {
+func (g *Graph) GetNode(name string) Node {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 	for _, node := range g.nodes {
@@ -76,12 +79,13 @@ func (g *graph) GetNode(name string) Node {
 	return nil
 }
 
-func (g *graph) GetNodes() []Node {
+// GetNodes returns all Node objects saved in the Graph as a slice. If it is empty, an empty slice is returned.
+func (g *Graph) GetNodes() []Node {
 	return g.nodes
 }
 
-// AddEdge adds a new edge from source to target to the graph.
-func (g *graph) AddEdge(source, target Node) {
+// AddEdge adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
+func (g *Graph) AddEdge(source, target Node) {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 	// add the nodes if they aren't already in place
@@ -103,7 +107,7 @@ func (g *graph) AddEdge(source, target Node) {
 }
 
 // HasEdge returns true if g has an edge from the source Node to the target Node, false otherwise.
-func (g *graph) HasEdge(source, target string) bool {
+func (g *Graph) HasEdge(source, target string) bool {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 	for _, edge := range g.edges {
@@ -115,8 +119,8 @@ func (g *graph) HasEdge(source, target string) bool {
 }
 
 // GetDependencies returns a slice containing all dependencies of the Node with the given string.
-// g contains an edge from the Node to each item in the returned dependencies.
-func (g *graph) GetDependencies(node string) []Node {
+// The Graph contains an edge from the Node to each item in the returned dependencies.
+func (g *Graph) GetDependencies(node string) []Node {
 	deps := make([]Node, 0)
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
@@ -129,8 +133,8 @@ func (g *graph) GetDependencies(node string) []Node {
 }
 
 // GetDependencies returns a slice containing all dependants of the Node with the given string.
-// g contains an edge from each item in dependants to the Node.
-func (g *graph) GetDependants(node string) []Node {
+// The Graph contains an edge from each item in dependants to the Node.
+func (g *Graph) GetDependants(node string) []Node {
 	deps := make([]Node, 0)
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
@@ -142,11 +146,11 @@ func (g *graph) GetDependants(node string) []Node {
 	return deps
 }
 
-// Copy returns a deep copy of g.
-func (g *graph) Copy() Graph {
+// Copy returns a deep copy of the Graph.
+func (g *Graph) Copy() Interface {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
-	result := &graph{
+	result := &Graph{
 		nodes: make([]Node, len(g.nodes)),
 		edges: make([]edge, len(g.edges)),
 	}
@@ -156,7 +160,7 @@ func (g *graph) Copy() Graph {
 }
 
 // scanDependencies adds the given dependency line with the given syntax as edges to g.
-func (g *graph) scanDependencies(line string, syntax *syntax.Syntax) {
+func (g *Graph) scanDependencies(line string, syntax *syntax.Syntax) {
 	infixIndex := strings.Index(line, syntax.EdgeInfix)
 	sources := []string{line[:infixIndex]}
 	if syntax.SourceDelimiter != "" {
@@ -181,7 +185,7 @@ func (g *graph) scanDependencies(line string, syntax *syntax.Syntax) {
 }
 
 // FromScanner reads data from the given scanner, building up the dependency tree.
-func (g *graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) (*graph, error) {
+func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) (*Graph, error) {
 	if len(syntaxes) == 0 {
 		panic("FromScanner: At least one syntax required!")
 	}
@@ -233,7 +237,8 @@ func (g *graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) 
 	return g, nil
 }
 
-func (g *graph) String() string {
+// String returns a simple string representation consisting of all edges.
+func (g *Graph) String() string {
 	if len(g.nodes) == 0 {
 		return "{empty graph}"
 	}
@@ -243,14 +248,6 @@ func (g *graph) String() string {
 		buffer.WriteString("; ")
 	}
 	return buffer.String()
-}
-
-// New creates a new, empty graph
-func New() *graph {
-	return &graph{
-		nodes: make([]Node, 0),
-		edges: make([]edge, 0),
-	}
 }
 
 // scanLineWithEscape is a drop-in replacement for bufio.ScanLines, appending the next line if the last byte is a backslash '\'

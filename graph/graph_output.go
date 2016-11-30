@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Contains utility functions for printing graphs.
+// Contains utility functions for printing graphs that work with every implementation of graph.Interface.
 package graph
 
 import (
@@ -48,7 +48,7 @@ func printDepTreeArrows(line1, line2 *string, fieldstart, fieldlen int, midpoint
 	return line1, line2
 }
 
-func printDepTreeLevel(g Graph, n Node, out []*string, rightOffset int) (modout []*string, width int) {
+func printDepTreeLevel(g Interface, n Node, out []*string, rightOffset int) (modout []*string, width int) {
 	dependencies := g.GetDependencies(n.String())
 	name := " " + n.String() + " "
 	if _, finished := nodeFinished[n]; finished {
@@ -111,25 +111,25 @@ func printDepTreeLevel(g Graph, n Node, out []*string, rightOffset int) (modout 
 }
 
 // PrintDepTree pretty prints the dependency tree of the specified startNode to stdout.
-func PrintDepTree(g Graph, start Node) {
+func PrintDepTree(graph Interface, start Node) {
 	if start == nil {
 		panic("printDepTree: start should not be nil!")
 	}
 	nodeFinished = map[Node]struct{}{}
-	out := wrapToStdout(printDepTreeLevel(g, start, make([]*string, 1), 0))
+	out := wrapToStdout(printDepTreeLevel(graph, start, make([]*string, 1), 0))
 	for _, lineptr := range out {
 		println(*lineptr)
 	}
 }
 
 // PrintFullDepTree prints the dependency tree of the whole graph to stdout.
-func PrintFullDepTree(g Graph) {
-	if len(g.GetNodes()) == 0 {
+func PrintFullDepTree(graph Interface) {
+	if len(graph.GetNodes()) == 0 {
 		println("{empty graph}")
 		return
 	}
 	// make a copy of our graph
-	fullGraph := g.Copy()
+	fullGraph := graph.Copy()
 	for _, n := range fullGraph.GetNodes() {
 		if len(fullGraph.GetDependants(n.String())) == 0 {
 			fullGraph.AddEdge(node("_all"), n)
@@ -186,11 +186,11 @@ func getStdoutWidth() (width int, err error) {
 	return strconv.Atoi(widthstring[:len(widthstring)-1])
 }
 
-// WriteGraph writes a machine-readable version of the given graph matching the given syntax to the given writer.
-func WriteGraph(g Graph, writer io.Writer, syntax *syntax.Syntax) {
+// WriteGraph writes a machine-readable version of the graph to writer, matching the given syntax.
+func WriteGraph(graph Interface, writer io.Writer, syntax *syntax.Syntax) {
 	writer.Write(append([]byte(syntax.GraphPrefix), '\n'))
-	for _, node := range g.GetNodes() {
-		dependencies := g.GetDependencies(node.String())
+	for _, node := range graph.GetNodes() {
+		dependencies := graph.GetDependencies(node.String())
 		if len(dependencies) > 0 {
 			writer.Write([]byte(syntax.EdgePrefix + "\"" + node.String() + "\"" + syntax.EdgeInfix))
 			for index, dep := range dependencies {
@@ -210,6 +210,6 @@ func WriteGraph(g Graph, writer io.Writer, syntax *syntax.Syntax) {
 }
 
 // WriteDot writes the given graph to the given io.Writer in dot language syntax.
-func WriteDot(g Graph, writer io.Writer) {
-	WriteGraph(g, writer, syntax.Dot)
+func WriteDot(graph Interface, writer io.Writer) {
+	WriteGraph(graph, writer, syntax.Dot)
 }

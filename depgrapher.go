@@ -15,7 +15,7 @@ import (
 )
 
 func testGraph() {
-	g, _ := graph.New().FromScanner(bufio.NewScanner(strings.NewReader("s1 s2: dep1 dep2\ns1: dep3\ndep3 dep2: dp4 dep5 dp6\ndep1:dp0\ndep5:dep7")), syntax.Makefile)
+	g, _ := (&graph.Graph{}).FromScanner(bufio.NewScanner(strings.NewReader("s1 s2: dep1 dep2\ns1: dep3\ndep3 dep2: dp4 dep5 dp6\ndep1:dp0\ndep5:dep7")), syntax.Makefile)
 	println("Reading graph successfull")
 	println(g.String())
 	println("Here is your dependency tree:")
@@ -25,7 +25,7 @@ func testGraph() {
 }
 
 // parseFiles parses the given files with the given syntaxes and returns the generated graphs
-func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g graph.Graph, err error) {
+func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g graph.Interface, err error) {
 	readers := make([]io.Reader, len(filenames))
 	for index, filename := range filenames {
 		readers[index], err = os.Open(filename)
@@ -34,7 +34,7 @@ func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g graph.Graph, er
 		}
 	}
 	scanner := bufio.NewScanner(io.MultiReader(readers...))
-	return graph.New().FromScanner(scanner, syntax...)
+	return (&graph.Graph{}).FromScanner(scanner, syntax...)
 }
 
 func main() {
@@ -47,7 +47,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	var g graph.Graph
+	var g graph.Interface
 	g, err = parseFiles(filenames, s...)
 	if err != nil {
 		panic(err)
