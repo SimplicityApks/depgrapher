@@ -10,6 +10,7 @@ package graph
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/SimplicityApks/depgrapher/syntax"
 	"runtime"
@@ -40,17 +41,21 @@ func (e *edge) String() string {
 // Interface defines a basic graph-like data structure.
 // The stored data is accessed by the String() method, so every Node needs to implement fmt.Stringer.
 type Interface interface {
+	// AddNode adds the node with edges to the nodes with the given target names to this graph.
+	AddNode(node Node, targetNames ...string)
 	// GetNode returns the Node with the specified name, or nil if the name couldn't be found in the graph.
 	GetNode(name string) Node
 	// GetNodes returns all Node objects saved in the graph as a slice. If the graph is empty, an empty slice is returned.
 	GetNodes() []Node
+	// RemoveNode removes the Node with the given name including its edges from the graph.
+	// Returns false if the graph didn't have a matching Node, true otherwise.
+	RemoveNode(name string) bool
 
 	// AddEdge adds a new edge from source to target to the graph. The nodes are added to the graph if they were not present.
 	AddEdge(source, target Node)
 	// HasEdge returns true if the graph has an edge from the source Node to the target Node, false otherwise.
 	HasEdge(source, target string) bool
 	// RemoveEdge removes the edge from the source Node to the target Node.
-	// The nodes are removed as well if they don't have any other dependencies or dependants.
 	// Returns false if the graph didn't have an edge from source to target, true otherwise.
 	RemoveEdge(source, target string) bool
 	// GetDependencies returns a slice containing all dependencies of the Node with the given string.
@@ -73,6 +78,26 @@ type Graph struct {
 	mutex sync.Mutex
 }
 
+// AddNode adds the node with edges to the nodes with the given target names to this graph.
+func (g *Graph) AddNode(node Node, targetNames ...string) {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	g.nodes = append(g.nodes, node)
+	for _, name := range targetNames {
+		var target Node
+		for _, n := range g.nodes {
+			if n.String() == name {
+				target = n
+				break
+			}
+		}
+		if target == nil {
+			panic(errors.New("AddNode: target node with name " + name + " not present in Graph"))
+		}
+		g.edges = append(g.edges, edge{source: node, target: target})
+	}
+}
+
 // GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
 func (g *Graph) GetNode(name string) Node {
 	g.mutex.Lock()
@@ -88,6 +113,36 @@ func (g *Graph) GetNode(name string) Node {
 // GetNodes returns all Node objects saved in the Graph as a slice. If it is empty, an empty slice is returned.
 func (g *Graph) GetNodes() []Node {
 	return g.nodes
+}
+
+// RemoveNode removes the Node with the given name including its edges from the graph.
+// Returns false if the graph didn't have a matching Node, true otherwise.
+func (g *Graph) RemoveNode(name string) bool {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	var node Node
+	for i, n := range g.nodes {
+		if n.String() == name {
+			// safe delete without preserving order
+			g.nodes[i] = g.nodes[len(g.nodes)-1]
+			g.nodes[len(g.nodes)-1] = nil
+			g.nodes = g.nodes[:len(g.nodes)-1]
+			node = n
+			break
+		}
+	}
+	if node == nil {
+		return false
+	}
+	for i, e := range g.edges {
+		if e.source == node || e.target == node {
+			// safe delete without preserving order
+			g.edges[i] = g.edges[len(g.edges)-1]
+			g.edges[len(g.edges)-1] = edge{}
+			g.edges = g.edges[:len(g.edges)-1]
+		}
+	}
+	return true
 }
 
 // AddEdge adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
@@ -125,7 +180,6 @@ func (g *Graph) HasEdge(source, target string) bool {
 }
 
 // RemoveEdge removes the edge from the source Node to the target Node.
-// The nodes are removed as well if they don't have any other dependencies or dependants.
 // Returns false if the graph didn't have an edge from source to target, true otherwise.
 func (g *Graph) RemoveEdge(source, target string) bool {
 	g.mutex.Lock()
@@ -138,25 +192,6 @@ func (g *Graph) RemoveEdge(source, target string) bool {
 			// set the last edge to nil so the nodes can be garbage collected
 			g.edges[last] = edge{}
 			g.edges = g.edges[:last]
-			// remove the nodes as well if they have no reason to live any more
-			if len(g.GetDependants(source)) == 0 && len(g.GetDependencies(source)) == 0 {
-				g.deleteNode(e.source)
-			}
-			if len(g.GetDependants(target)) == 0 && len(g.GetDependencies(target)) == 0 {
-				g.deleteNode(e.target)
-			}
-			return true
-		}
-	}
-	return false
-}
-
-func (g *Graph) deleteNode(n Node) bool {
-	for index, current := range g.nodes {
-		if current == n {
-			last := len(g.nodes) - 1
-			g.nodes[index] = g.nodes[last]
-			g.nodes = g.nodes[:last]
 			return true
 		}
 	}
