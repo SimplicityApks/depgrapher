@@ -239,6 +239,42 @@ func (g *Graph) Copy() Interface {
 	return result
 }
 
+// GetDependencyGraph builds the dependency graph for the node.
+func (g *Graph) GetDependencyGraph(nodename string) *Graph {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	startEdges := make([]edge, 0)
+	for _, edge := range g.edges {
+		if edge.source.String() == nodename {
+			startEdges = append(startEdges, edge)
+		}
+	}
+	result := &Graph{
+		nodes: []Node{node(nodename)},
+		edges: startEdges,
+	}
+	// walk through the graph and add each node that we can reach from our start node
+EDGELOOP:
+	for i := 0; i < len(result.edges); i++ {
+		edge := result.edges[i]
+		// check if target node is present
+		for _, n := range result.nodes {
+			if n == edge.target {
+				continue EDGELOOP
+			}
+		}
+		// target has not been added yet, add it and its dependencies
+		result.nodes = append(result.nodes, edge.target)
+		// we modify the iterating slice here, but that is fine because it is only appending
+		for _, e := range g.edges {
+			if e.source == edge.target {
+				result.edges = append(result.edges, e)
+			}
+		}
+	}
+	return result
+}
+
 // scanDependencies adds the given dependency line with the given syntax as edges to g.
 func (g *Graph) scanDependencies(line string, syntax *syntax.Syntax) {
 	infixIndex := strings.Index(line, syntax.EdgeInfix)

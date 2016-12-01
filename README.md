@@ -15,11 +15,11 @@ or checkout repo and run
 Usage
 -----
 
-`depgrapher [-syntax syntaxname] [-outfile filename|stdout] [file...]`
+`depgrapher [-syntax syntaxname] [-node startname] [-outfile filename.dot|stdout] [file...]`
 
 Example:
 
-`depgrapher -syntax=Makefile -outfile stdout Makefile`
+`depgrapher -syntax=Makefile -node all -outfile stdout Makefile`
 
 License
 -------

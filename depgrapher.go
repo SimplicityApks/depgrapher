@@ -41,25 +41,41 @@ func main() {
 	// declare flags
 	syntaxString := flag.String("syntax", "Makefile,Dot", "Syntax to be used to parse the file")
 	outfilename := flag.String("outfile", "", "File to write a dot representation of the dependency tree")
+	startNode := flag.String("node", "", "Name of the node for wich the dependency graph should be printed. Defaults to all nodes.")
 	flag.Parse()
 	filenames := flag.Args()
 	s, err := syntax.Parse(*syntaxString)
 	if err != nil {
 		panic(err)
 	}
-	var g graph.Interface
-	g, err = parseFiles(filenames, s...)
+	var i graph.Interface
+	i, err = parseFiles(filenames, s...)
 	if err != nil {
 		panic(err)
 	}
+	g := i.(*graph.Graph)
 	if *outfilename == "stdout" {
-		graph.WriteDot(g, os.Stdout)
+		if *startNode == "" {
+			graph.WriteDot(g, os.Stdout)
+		} else {
+			graph.WriteDot(g.GetDependencyGraph(*startNode), os.Stdout)
+		}
 	} else if *outfilename != "" {
-		var outfile io.Writer
-		outfile, err = os.Create(*outfilename)
-		graph.WriteDot(g, outfile)
+		outfile, err := os.Create(*outfilename)
+		if err != nil {
+			panic(err)
+		}
+		if *startNode == "" {
+			graph.WriteDot(g, outfile)
+		} else {
+			graph.WriteDot(g.GetDependencyGraph(*startNode), outfile)
+		}
 	} else {
 		// write ascii graph to stdout
-		graph.PrintFullDepTree(g)
+		if *startNode == "" {
+			graph.PrintFullDepTree(g)
+		} else {
+			graph.PrintDepTree(g, g.GetNode(*startNode))
+		}
 	}
 }
