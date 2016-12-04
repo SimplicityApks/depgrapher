@@ -11,18 +11,7 @@ import (
 	"github.com/SimplicityApks/depgrapher/syntax"
 	"io"
 	"os"
-	"strings"
 )
-
-func testGraph() {
-	g, _ := (&graph.Graph{}).FromScanner(bufio.NewScanner(strings.NewReader("s1 s2: dep1 dep2\ns1: dep3\ndep3 dep2: dp4 dep5 dp6\ndep1:dp0\ndep5:dep7")), syntax.Makefile)
-	println("Reading graph successfull")
-	println(g.String())
-	println("Here is your dependency tree:")
-	graph.PrintFullDepTree(g)
-	println("Here is the dot export")
-	graph.WriteDot(g, os.Stdout)
-}
 
 // parseFiles parses the given files with the given syntaxes and returns the generated graphs
 func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g graph.Interface, err error) {
@@ -75,7 +64,11 @@ func main() {
 		if *startNode == "" {
 			graph.PrintFullDepTree(g)
 		} else {
-			graph.PrintDepTree(g, g.GetNode(*startNode))
+			start := g.GetNode(*startNode)
+			if start == nil {
+				panic("Starting node with name " + *startNode + "not found!")
+			}
+			graph.PrintDepTree(g, start)
 		}
 	}
 }

@@ -67,7 +67,7 @@ type Interface interface {
 	Copy() Interface
 }
 
-// Graph represents the dependency graph in memory. It internally uses a mutex to make read and write access concurrency-safe
+// Graph represents the dependency graph in memory. It internally uses a mutex to make read and write access concurrency-safe.
 // It satisfies the graph.Interface and fmt.Stringer interfaces.
 // The zero value is an empty graph with no dependencies.
 //
@@ -239,18 +239,27 @@ func (g *Graph) Copy() Interface {
 	return result
 }
 
-// GetDependencyGraph builds the dependency graph for the node.
+// GetDependencyGraph builds the dependency graph for the node. Returns nil if no node with the given name was found in g.
 func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
+	var start Node = nil
+	for _, node := range g.nodes {
+		if node.String() == nodename {
+			start = node
+		}
+	}
+	if start == nil {
+		return nil
+	}
 	startEdges := make([]edge, 0)
 	for _, edge := range g.edges {
-		if edge.source.String() == nodename {
+		if edge.source == start {
 			startEdges = append(startEdges, edge)
 		}
 	}
 	result := &Graph{
-		nodes: []Node{node(nodename)},
+		nodes: []Node{start},
 		edges: startEdges,
 	}
 	// walk through the graph and add each node that we can reach from our start node
