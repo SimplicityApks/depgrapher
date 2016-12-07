@@ -12,6 +12,13 @@ import (
 	"testing"
 )
 
+// Most Tests and benchmarks use a level graph returned by setupLevelGraph with the following number of levels.
+// The number of levels should be at least 3, increasing it will slow down tests exponentially!
+const (
+	BENCH_GRAPH_LEVELS = 5
+	TEST_GRAPH_LEVELS  = 3
+)
+
 // Test setup utilities and helper methods
 
 // The tests use int nodes most of the time for simplicity
@@ -82,7 +89,7 @@ func TestGraph_AddNode(t *testing.T) {
 }
 
 func TestGraph_GetNode(t *testing.T) {
-	var levels uint = 3
+	var levels uint = TEST_GRAPH_LEVELS
 	g := setupLevelGraph(levels)
 	if g.GetNode("nonexistent") != nil {
 		t.Error("GetNode returned a value for a not existing node!")
@@ -100,7 +107,7 @@ func TestGraph_GetNode(t *testing.T) {
 }
 
 func TestGraph_GetNodes(t *testing.T) {
-	var levels uint = 3
+	var levels uint = TEST_GRAPH_LEVELS
 	g := setupLevelGraph(levels)
 	nodes := g.GetNodes()
 	if len(nodes) != (1<<levels)-1 {
@@ -118,7 +125,7 @@ NODELOOP:
 }
 
 func TestGraph_RemoveNode(t *testing.T) {
-	var levels uint = 2
+	var levels uint = TEST_GRAPH_LEVELS
 	g := setupLevelGraph(levels)
 	if g.RemoveNode("nonexistent") {
 		t.Error("RemoveNode returned true for not existing node")
@@ -166,7 +173,7 @@ func TestGraph_AddEdge(t *testing.T) {
 }
 
 func TestGraph_HasEdge(t *testing.T) {
-	var levels, level uint = 3, 0
+	var levels, level uint = TEST_GRAPH_LEVELS, 0
 	g := setupLevelGraph(levels)
 	// check not existing nodes
 	if g.HasEdge("1", "nonexistent") || g.HasEdge("nonexistent", "1") || g.HasEdge("nonexistent", "nonexistent2") {
@@ -190,7 +197,7 @@ func TestGraph_HasEdge(t *testing.T) {
 }
 
 func TestGraph_RemoveEdge(t *testing.T) {
-	var levels, level uint = 3, 0
+	var levels, level uint = TEST_GRAPH_LEVELS, 0
 	g := setupLevelGraph(levels)
 	// check not existing nodes
 	if g.RemoveEdge("1", "nonexistent") || g.RemoveEdge("nonexistent", "1") || g.RemoveEdge("nonexistent", "nonexistent2") {
@@ -217,7 +224,7 @@ func TestGraph_RemoveEdge(t *testing.T) {
 }
 
 func TestGraph_GetDependencies(t *testing.T) {
-	var levels, level uint = 3, 0
+	var levels, level uint = TEST_GRAPH_LEVELS, 0
 	g := setupLevelGraph(levels)
 	// check nonexisting node
 	if len(g.GetDependencies("nonexistent")) != 0 {
@@ -251,7 +258,7 @@ func TestGraph_GetDependencies(t *testing.T) {
 }
 
 func TestGraph_GetDependants(t *testing.T) {
-	var levels, level uint = 3, 0
+	var levels, level uint = TEST_GRAPH_LEVELS, 0
 	g := setupLevelGraph(levels)
 	// check nonexisting node
 	if len(g.GetDependants("nonexistent")) != 0 {
@@ -283,7 +290,7 @@ func TestGraph_GetDependants(t *testing.T) {
 }
 
 func TestGraph_Copy(t *testing.T) {
-	var levels, level uint = 3, 0
+	var levels, level uint = TEST_GRAPH_LEVELS, 0
 	g := setupLevelGraph(levels)
 	gCopy := g.Copy()
 	// remove a node so we are sure it is a copy
@@ -315,7 +322,7 @@ func TestGraph_Copy(t *testing.T) {
 }
 
 func TestGraph_GetDependencyGraph(t *testing.T) {
-	var levels, level uint = 3, 0
+	var levels, level uint = TEST_GRAPH_LEVELS, 0
 	g := setupLevelGraph(levels)
 	// test nonexistent node
 	if g.GetDependencyGraph("nonexistent") != nil {
@@ -387,5 +394,171 @@ func TestGraph_FromScanner(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// BENCHMARKS
+
+func BenchmarkGraph_AddNode(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	nodeOffset := 1 << BENCH_GRAPH_LEVELS
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.AddNode(intnode(nodeOffset + i))
+	}
+}
+
+func BenchmarkGraph_AddNode_dependencies(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	nodeOffset := 1 << BENCH_GRAPH_LEVELS
+	nodes := g.GetNodes()
+	deps := make([]string, len(nodes))
+	for i, node := range nodes {
+		deps[i] = node.String()
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.AddNode(intnode(nodeOffset+i), deps...)
+	}
+}
+
+func BenchmarkGraph_GetNode(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// run GetNode on the node on the bottom right of the graph (worst case in the levelGraph)
+	nodename := strconv.Itoa(1<<BENCH_GRAPH_LEVELS - 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.GetNode(nodename)
+	}
+}
+
+func BenchmarkGraph_GetNodes(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.GetNodes()
+	}
+}
+
+func BenchmarkGraph_RemoveNode(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// run RemoveNode on the nodes in the bottom level of the graph (worst case in the levelGraph, but doesn't remove dependencies)
+	node := 1 << (BENCH_GRAPH_LEVELS - 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if node == (1 << BENCH_GRAPH_LEVELS) {
+			// we removed all nodes in the level, restore it
+			b.StopTimer()
+			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
+			node = 1 << (BENCH_GRAPH_LEVELS - 1)
+			b.StartTimer()
+		}
+		g.RemoveNode(strconv.Itoa(node))
+		node++
+	}
+}
+
+// remove a node with a ton of dependencies
+func BenchmarkGraph_RemoveNode_dependencies(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// run RemoveNode on the nodes just above the bottom level of the graph (worst case in the levelGraph)
+	node := 1 << (BENCH_GRAPH_LEVELS - 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if node == (1 << (BENCH_GRAPH_LEVELS - 1)) {
+			// we removed all nodes in the level, restore it
+			b.StopTimer()
+			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
+			node = 1 << (BENCH_GRAPH_LEVELS - 2)
+			b.StartTimer()
+		}
+		g.RemoveNode(strconv.Itoa(node))
+		node++
+	}
+}
+
+func BenchmarkGraph_AddEdge(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// run AddEdge on the node on the bottom right of the graph (worst case in the levelGraph)
+	var node uint = 1 << (BENCH_GRAPH_LEVELS - 1)
+	startnode := intnode(1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if node == (1 << BENCH_GRAPH_LEVELS) {
+			// we added edges for all nodes in the level, restore it
+			b.StopTimer()
+			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
+			node = 1 << (BENCH_GRAPH_LEVELS - 1)
+			b.StartTimer()
+		}
+		g.AddEdge(intnode(node), startnode)
+	}
+}
+
+func BenchmarkGraph_HasEdge(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// run HasEdge on the edge on the bottom right of the graph (worst case in the levelGraph)
+	sourcename := strconv.Itoa(1<<(BENCH_GRAPH_LEVELS-1) - 1)
+	targetname := strconv.Itoa(1<<BENCH_GRAPH_LEVELS - 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.HasEdge(sourcename, targetname)
+	}
+}
+
+func BenchmarkGraph_RemoveEdge(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// run RemoveEdge on the nodes just above the bottom level of the graph (worst case in the levelGraph)
+	source := 1 << (BENCH_GRAPH_LEVELS - 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if source == (1 << (BENCH_GRAPH_LEVELS - 1)) {
+			// we removed all edges on the bottom, restore the graph
+			b.StopTimer()
+			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
+			source = 1 << (BENCH_GRAPH_LEVELS - 2)
+			b.StartTimer()
+		}
+		g.RemoveEdge(strconv.Itoa(source), strconv.Itoa(source+(1<<(BENCH_GRAPH_LEVELS-1))-1))
+		source++
+	}
+}
+
+func BenchmarkGraph_GetDependencies(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// call GetDependants on the node just above the bottom left (worst case)
+	nodename := strconv.Itoa((1 << BENCH_GRAPH_LEVELS) - 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.GetDependencies(nodename)
+	}
+}
+
+func BenchmarkGraph_GetDependants(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// call GetDependants on the node on the bottom right (worst case)
+	nodename := strconv.Itoa((1 << BENCH_GRAPH_LEVELS) - 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.GetDependants(nodename)
+	}
+}
+
+func BenchmarkGraph_GetDependencyGraph(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.GetDependencyGraph("1")
+	}
+}
+
+func BenchmarkGraph_FromScanner(b *testing.B) {
+	// build a levelGraph with 5 levels
+	const graphString = "1 : 2 3 \n 2 3 : 4 5 6 7\n 4 5 6 7 : 8 9 10 11 12 13 14 15 \n 8 9 10 11 12 13 14 15 : 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31"
+	scanner := bufio.NewScanner(strings.NewReader(graphString))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		(&Graph{}).FromScanner(scanner, syntax.Makefile)
+		scanner = bufio.NewScanner(strings.NewReader(graphString))
 	}
 }
