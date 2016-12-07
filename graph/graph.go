@@ -75,7 +75,7 @@ type Interface interface {
 type Graph struct {
 	nodes []Node
 	edges []edge
-	mutex sync.Mutex
+	mutex sync.RWMutex
 }
 
 // AddNode adds the node with edges to the nodes with the given target names to this graph.
@@ -100,8 +100,8 @@ func (g *Graph) AddNode(node Node, targetNames ...string) {
 
 // GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
 func (g *Graph) GetNode(name string) Node {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
 	for _, node := range g.nodes {
 		if node.String() == name {
 			return node
@@ -169,8 +169,8 @@ func (g *Graph) AddEdge(source, target Node) {
 
 // HasEdge returns true if g has an edge from the source Node to the target Node, false otherwise.
 func (g *Graph) HasEdge(source, target string) bool {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
 		if edge.source.String() == source && edge.target.String() == target {
 			return true
@@ -202,8 +202,8 @@ func (g *Graph) RemoveEdge(source, target string) bool {
 // The Graph contains an edge from the Node to each item in the returned dependencies.
 func (g *Graph) GetDependencies(node string) []Node {
 	deps := make([]Node, 0)
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
 		if edge.source.String() == node {
 			deps = append(deps, edge.target)
@@ -216,8 +216,8 @@ func (g *Graph) GetDependencies(node string) []Node {
 // The Graph contains an edge from each item in dependants to the Node.
 func (g *Graph) GetDependants(node string) []Node {
 	deps := make([]Node, 0)
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
 		if edge.target.String() == node {
 			deps = append(deps, edge.source)
@@ -228,8 +228,8 @@ func (g *Graph) GetDependants(node string) []Node {
 
 // Copy returns a deep copy of the Graph.
 func (g *Graph) Copy() Interface {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
 	result := &Graph{
 		nodes: make([]Node, len(g.nodes)),
 		edges: make([]edge, len(g.edges)),
@@ -241,8 +241,8 @@ func (g *Graph) Copy() Interface {
 
 // GetDependencyGraph builds the dependency graph for the node. Returns nil if no node with the given name was found in g.
 func (g *Graph) GetDependencyGraph(nodename string) *Graph {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
 	var start Node = nil
 	for _, node := range g.nodes {
 		if node.String() == nodename {
@@ -364,6 +364,8 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) 
 
 // String returns a simple string representation consisting of all edges.
 func (g *Graph) String() string {
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
 	if len(g.nodes) == 0 {
 		return "{empty graph}"
 	}
