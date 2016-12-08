@@ -15,7 +15,7 @@ import (
 // Most Tests and benchmarks use a level graph returned by setupLevelGraph with the following number of levels.
 // The number of levels should be at least 3, increasing it will slow down tests exponentially!
 const (
-	BENCH_GRAPH_LEVELS = 5
+	BENCH_GRAPH_LEVELS = 10
 	TEST_GRAPH_LEVELS  = 3
 )
 
@@ -39,16 +39,13 @@ func (i intnode) String() string {
 //  ....                         // level levels-1
 // so that each node has edges to all nodes in the next level.
 func setupLevelGraph(levels uint) *Graph {
-	nodeCount := (1 << levels) - 1
+	var nodeCount uint = (1 << levels) - 1
 	// every node has edges to all nodes in the next level
 	// edgeCount = sum from n:=0 to levels-1 of (2^n*(2^(n+1))) - 2^levels
 	//  		 = sum from n:=0 to levels-2 of 2^(2n) * 2
 	//           = 2* (1-4^(levels-1)) / (1-4)
-	edgeCount := ((1 << (2 * (levels - 1))) - 1) * 2 / 3
-	g := &Graph{
-		nodes: make([]Node, 0, nodeCount),
-		edges: make([]edge, 0, edgeCount),
-	}
+	var edgeCount uint = ((1 << (2 * (levels - 1))) - 1) * 2 / 3
+	g := New(nodeCount, edgeCount)
 
 	if levels == 0 {
 		return g
@@ -72,7 +69,7 @@ func setupLevelGraph(levels uint) *Graph {
 }
 
 func TestGraph_AddNode(t *testing.T) {
-	g := &Graph{}
+	g := New()
 	n1 := intnode(1)
 	g.AddNode(n1)
 	if len(g.GetNodes()) != 1 || g.GetNodes()[0] != n1 {
@@ -144,7 +141,7 @@ func TestGraph_RemoveNode(t *testing.T) {
 }
 
 func TestGraph_AddEdge(t *testing.T) {
-	g := &Graph{}
+	g := New()
 	n := intnode(1)
 	g.AddEdge(n, intnode(2))
 	if !g.HasEdge("1", "2") {
@@ -361,13 +358,13 @@ func TestGraph_GetDependencyGraph(t *testing.T) {
 func TestGraph_FromScanner(t *testing.T) {
 	var levels, level uint = 3, 0
 	// test empty string
-	gEmpty, err := (&Graph{}).FromScanner(bufio.NewScanner(strings.NewReader("")), syntax.Makefile)
+	gEmpty, err := New().FromScanner(bufio.NewScanner(strings.NewReader("")), syntax.Makefile)
 	if err != nil || len(gEmpty.GetNodes()) != 0 {
 		t.Error("FromScanner returned a non-empty graph for an empty scanner")
 	}
 	// build a levelGraph with 3 levels
 	graphString := "1:2 3 \n 2 3: 4 5 6 7\n"
-	g, err := (&Graph{}).FromScanner(bufio.NewScanner(strings.NewReader(graphString)), syntax.Makefile)
+	g, err := New().FromScanner(bufio.NewScanner(strings.NewReader(graphString)), syntax.Makefile)
 	if err != nil {
 		t.Error("FromScanner returned an error for a levelGraph")
 	}
@@ -558,7 +555,7 @@ func BenchmarkGraph_FromScanner(b *testing.B) {
 	scanner := bufio.NewScanner(strings.NewReader(graphString))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		(&Graph{}).FromScanner(scanner, syntax.Makefile)
+		New().FromScanner(scanner, syntax.Makefile)
 		scanner = bufio.NewScanner(strings.NewReader(graphString))
 	}
 }

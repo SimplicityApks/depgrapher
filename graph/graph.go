@@ -69,29 +69,39 @@ type Interface interface {
 
 // Graph represents the dependency graph in memory. It internally uses a mutex to make read and write access concurrency-safe.
 // It satisfies the graph.Interface and fmt.Stringer interfaces.
-// The zero value is an empty graph with no dependencies.
+// The zero value is an uninitialized graph, use graph.New() to get an initialized Graph.
 //
 // This implementation prefers fast(-ish) node lookups over edge removals because it keeps a list of all nodes ready.
 type Graph struct {
-	nodes []Node
+	nodes map[string]Node
 	edges []edge
 	mutex sync.RWMutex
+}
+
+// New returns a freshly initialized, ready-to-use Graph.
+// It takes an optional first parameter specifying the capacity of nodes that the Graph will contain, and an optional
+// second uint specifying the number of edges it will hold.
+func New(capacities ...uint) *Graph {
+	switch len(capacities) {
+	case 0:
+		return &Graph{nodes: make(map[string]Node)}
+	case 1:
+		return &Graph{nodes: make(map[string]Node, capacities[0])}
+	case 2:
+		return &Graph{nodes: make(map[string]Node, capacities[0]), edges: make([]edge, 0, capacities[1])}
+	default:
+		panic("More than 2 capacity parameters for graph.New")
+	}
 }
 
 // AddNode adds the node with edges to the nodes with the given target names to this graph.
 func (g *Graph) AddNode(node Node, targetNames ...string) {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
-	g.nodes = append(g.nodes, node)
+	g.nodes[node.String()] = node
 	for _, name := range targetNames {
-		var target Node
-		for _, n := range g.nodes {
-			if n.String() == name {
-				target = n
-				break
-			}
-		}
-		if target == nil {
+		target, ok := g.nodes[name]
+		if !ok {
 			panic(errors.New("AddNode: target node with name " + name + " not present in Graph"))
 		}
 		g.edges = append(g.edges, edge{source: node, target: target})
@@ -102,17 +112,18 @@ func (g *Graph) AddNode(node Node, targetNames ...string) {
 func (g *Graph) GetNode(name string) Node {
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
-	for _, node := range g.nodes {
-		if node.String() == name {
-			return node
-		}
-	}
-	return nil
+	return g.nodes[name]
 }
 
 // GetNodes returns all Node objects saved in the Graph as a slice. If it is empty, an empty slice is returned.
 func (g *Graph) GetNodes() []Node {
-	return g.nodes
+	g.mutex.RLock()
+	defer g.mutex.RUnlock()
+	nodes := make([]Node, 0, len(g.nodes))
+	for _, node := range g.nodes {
+		nodes = append(nodes, node)
+	}
+	return nodes
 }
 
 // RemoveNode removes the Node with the given name including its edges from the graph.
@@ -120,17 +131,8 @@ func (g *Graph) GetNodes() []Node {
 func (g *Graph) RemoveNode(name string) bool {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
-	var node Node
-	for i, n := range g.nodes {
-		if n.String() == name {
-			// safe delete without preserving order
-			g.nodes[i] = g.nodes[len(g.nodes)-1]
-			g.nodes[len(g.nodes)-1] = nil
-			g.nodes = g.nodes[:len(g.nodes)-1]
-			node = n
-			break
-		}
-	}
+	node := g.nodes[name]
+	delete(g.nodes, name)
 	if node == nil {
 		return false
 	}
@@ -150,19 +152,11 @@ func (g *Graph) AddEdge(source, target Node) {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 	// add the nodes if they aren't already in place
-	var foundSource, foundTarget bool
-	for _, n := range g.nodes {
-		if n.String() == source.String() {
-			foundSource = true
-		} else if n.String() == target.String() {
-			foundTarget = true
-		}
+	if _, ok := g.nodes[source.String()]; !ok {
+		g.nodes[source.String()] = source
 	}
-	if !foundSource {
-		g.nodes = append(g.nodes, source)
-	}
-	if !foundTarget {
-		g.nodes = append(g.nodes, target)
+	if _, ok := g.nodes[target.String()]; !ok {
+		g.nodes[target.String()] = target
 	}
 	g.edges = append(g.edges, edge{source: source, target: target})
 }
@@ -231,10 +225,12 @@ func (g *Graph) Copy() Interface {
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
 	result := &Graph{
-		nodes: make([]Node, len(g.nodes)),
+		nodes: make(map[string]Node, len(g.nodes)),
 		edges: make([]edge, len(g.edges)),
 	}
-	copy(result.nodes, g.nodes)
+	for k, v := range g.nodes {
+		result.nodes[k] = v
+	}
 	copy(result.edges, g.edges)
 	return result
 }
@@ -243,13 +239,8 @@ func (g *Graph) Copy() Interface {
 func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
-	var start Node = nil
-	for _, node := range g.nodes {
-		if node.String() == nodename {
-			start = node
-		}
-	}
-	if start == nil {
+	start, ok := g.nodes[nodename]
+	if !ok {
 		return nil
 	}
 	startEdges := make([]edge, 0)
@@ -259,21 +250,18 @@ func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 		}
 	}
 	result := &Graph{
-		nodes: []Node{start},
+		nodes: map[string]Node{nodename: start},
 		edges: startEdges,
 	}
 	// walk through the graph and add each node that we can reach from our start node
-EDGELOOP:
 	for i := 0; i < len(result.edges); i++ {
 		edge := result.edges[i]
 		// check if target node is present
-		for _, n := range result.nodes {
-			if n == edge.target {
-				continue EDGELOOP
-			}
+		if _, ok := result.nodes[edge.target.String()]; ok {
+			continue
 		}
 		// target has not been added yet, add it and its dependencies
-		result.nodes = append(result.nodes, edge.target)
+		result.nodes[edge.target.String()] = edge.target
 		// we modify the iterating slice here, but that is fine because it is only appending
 		for _, e := range g.edges {
 			if e.source == edge.target {

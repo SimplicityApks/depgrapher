@@ -23,7 +23,7 @@ func parseFiles(filenames []string, syntax ...*syntax.Syntax) (g graph.Interface
 		}
 	}
 	scanner := bufio.NewScanner(io.MultiReader(readers...))
-	return (&graph.Graph{}).FromScanner(scanner, syntax...)
+	return graph.New().FromScanner(scanner, syntax...)
 }
 
 func main() {
