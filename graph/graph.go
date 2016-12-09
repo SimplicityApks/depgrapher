@@ -67,15 +67,15 @@ type Interface interface {
 	Copy() Interface
 }
 
-// Graph represents the dependency graph in memory. It internally uses a mutex to make read and write access concurrency-safe.
+// Graph represents the dependency graph in memory. Reades and writes at the same time are not concurrency-safe and
+// therefore need to be synchronized. Checkout graph.Synced for a thread-safe version of Graph.
 // It satisfies the graph.Interface and fmt.Stringer interfaces.
 // The zero value is an uninitialized graph, use graph.New() to get an initialized Graph.
 //
-// This implementation prefers fast(-ish) node lookups over edge removals because it keeps a list of all nodes ready.
+// This implementation prefers fast(-ish) node lookups over edge removals because it keeps a map of all nodes ready.
 type Graph struct {
 	nodes map[string]Node
 	edges []edge
-	mutex sync.RWMutex
 }
 
 // New returns a freshly initialized, ready-to-use Graph.
@@ -96,8 +96,6 @@ func New(capacities ...uint) *Graph {
 
 // AddNode adds the node with edges to the nodes with the given target names to this graph.
 func (g *Graph) AddNode(node Node, targetNames ...string) {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 	g.nodes[node.String()] = node
 	for _, name := range targetNames {
 		target, ok := g.nodes[name]
@@ -110,8 +108,6 @@ func (g *Graph) AddNode(node Node, targetNames ...string) {
 
 // AddNodes adds the given nodes to this graph.
 func (g *Graph) AddNodes(nodes ...Node) {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 	for _, node := range nodes {
 		g.nodes[node.String()] = node
 	}
@@ -119,15 +115,11 @@ func (g *Graph) AddNodes(nodes ...Node) {
 
 // GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
 func (g *Graph) GetNode(name string) Node {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
 	return g.nodes[name]
 }
 
 // GetNodes returns all Node objects saved in the Graph as a slice. If it is empty, an empty slice is returned.
 func (g *Graph) GetNodes() []Node {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
 	nodes := make([]Node, 0, len(g.nodes))
 	for _, node := range g.nodes {
 		nodes = append(nodes, node)
@@ -138,8 +130,6 @@ func (g *Graph) GetNodes() []Node {
 // RemoveNode removes the Node with the given name including its edges from the graph.
 // Returns false if the graph didn't have a matching Node, true otherwise.
 func (g *Graph) RemoveNode(name string) bool {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 	node := g.nodes[name]
 	delete(g.nodes, name)
 	if node == nil {
@@ -158,8 +148,6 @@ func (g *Graph) RemoveNode(name string) bool {
 
 // AddEdge adds an edge from the source Node to the target Node to the graph.
 func (g *Graph) AddEdge(source, target string) {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 	sourceNode, ok := g.nodes[source]
 	if !ok {
 		panic("AddEdge: source Node not present in Graph!")
@@ -173,8 +161,6 @@ func (g *Graph) AddEdge(source, target string) {
 
 // AddEdgeAndNodes adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
 func (g *Graph) AddEdgeAndNodes(source, target Node) {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 	// add the nodes if they aren't already in place
 	if _, ok := g.nodes[source.String()]; !ok {
 		g.nodes[source.String()] = source
@@ -187,8 +173,6 @@ func (g *Graph) AddEdgeAndNodes(source, target Node) {
 
 // HasEdge returns true if g has an edge from the source Node to the target Node, false otherwise.
 func (g *Graph) HasEdge(source, target string) bool {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
 		if edge.source.String() == source && edge.target.String() == target {
 			return true
@@ -200,8 +184,6 @@ func (g *Graph) HasEdge(source, target string) bool {
 // RemoveEdge removes the edge from the source Node to the target Node.
 // Returns false if the graph didn't have an edge from source to target, true otherwise.
 func (g *Graph) RemoveEdge(source, target string) bool {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 	for index, e := range g.edges {
 		if e.source.String() == source && e.target.String() == target {
 			// delete without preserving order as it is faster
@@ -220,8 +202,6 @@ func (g *Graph) RemoveEdge(source, target string) bool {
 // The Graph contains an edge from the Node to each item in the returned dependencies.
 func (g *Graph) GetDependencies(node string) []Node {
 	var deps []Node
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
 		if edge.source.String() == node {
 			deps = append(deps, edge.target)
@@ -234,8 +214,6 @@ func (g *Graph) GetDependencies(node string) []Node {
 // The Graph contains an edge from each item in dependants to the Node.
 func (g *Graph) GetDependants(node string) []Node {
 	var deps []Node
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
 		if edge.target.String() == node {
 			deps = append(deps, edge.source)
@@ -246,8 +224,6 @@ func (g *Graph) GetDependants(node string) []Node {
 
 // Copy returns a deep copy of the Graph.
 func (g *Graph) Copy() Interface {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
 	result := &Graph{
 		nodes: make(map[string]Node, len(g.nodes)),
 		edges: make([]edge, len(g.edges)),
@@ -261,8 +237,6 @@ func (g *Graph) Copy() Interface {
 
 // GetDependencyGraph builds the dependency graph for the node. Returns nil if no node with the given name was found in g.
 func (g *Graph) GetDependencyGraph(nodename string) *Graph {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
 	start, ok := g.nodes[nodename]
 	if !ok {
 		return nil
@@ -296,8 +270,55 @@ func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 	return result
 }
 
-// scanDependencies adds the given dependency line with the given syntax as edges to g.
-func (g *Graph) scanDependencies(line string, syntax *syntax.Syntax) {
+// FromScanner reads data from the given scanner, building up the dependency tree.
+func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) (*Graph, error) {
+	if len(syntaxes) == 0 {
+		panic("FromScanner: At least one syntax required!")
+	}
+	scanner.Split(scanLineWithEscape)
+	activeSyntaxes := make(map[*syntax.Syntax]struct{}, len(syntaxes))
+	addEdge := func(s string, t string) { g.AddEdgeAndNodes(node(s), node(t)) }
+	for scanner.Scan() {
+		if scanner.Err() != nil {
+			return g, scanner.Err()
+		}
+		line := scanner.Text()
+		for _, syntax := range syntaxes {
+			if strings.Contains(line, syntax.GraphPrefix) {
+				activeSyntaxes[syntax] = struct{}{}
+			} else if _, active := activeSyntaxes[syntax]; !active {
+				continue
+			}
+			if syntax.GraphSuffix != "" && strings.Contains(line, syntax.GraphSuffix) {
+				delete(activeSyntaxes, syntax)
+			}
+			prefIndex := strings.Index(line, syntax.EdgePrefix)
+			infixIndex := strings.Index(line, syntax.EdgeInfix)
+			suffixIndex := strings.LastIndex(line, syntax.EdgeSuffix)
+			if prefIndex >= 0 && infixIndex >= 0 && suffixIndex >= 0 {
+				scanDependencies(line[prefIndex+len(syntax.EdgePrefix):suffixIndex], syntax, addEdge)
+				break
+			}
+		}
+	}
+	return g, nil
+}
+
+// String returns a simple string representation consisting of all edges.
+func (g *Graph) String() string {
+	if len(g.nodes) == 0 {
+		return "{empty graph}"
+	}
+	var buffer bytes.Buffer
+	for _, edge := range g.edges {
+		buffer.WriteString(edge.String())
+		buffer.WriteString("; ")
+	}
+	return buffer.String()
+}
+
+// scanDependencies adds the given dependency line with the given syntax as edges by calling the given addEdge function.
+func scanDependencies(line string, syntax *syntax.Syntax, addEdge func(string, string)) {
 	infixIndex := strings.Index(line, syntax.EdgeInfix)
 	sources := []string{line[:infixIndex]}
 	if syntax.SourceDelimiter != "" {
@@ -314,20 +335,151 @@ func (g *Graph) scanDependencies(line string, syntax *syntax.Syntax) {
 					target = strings.TrimSpace(target)
 				}
 				if target != "" {
-					g.AddEdgeAndNodes(node(source), node(target))
+					addEdge(source, target)
 				}
 			}
 		}
 	}
 }
 
+// scanLineWithEscape is a drop-in replacement for bufio.ScanLines, appending the next line if the last byte is a backslash '\'
+func scanLineWithEscape(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	advance, token, err = bufio.ScanLines(data, atEOF)
+	for err == nil && len(token) > 0 && token[len(token)-1] == '\\' {
+		// omit the trailing backslash
+		token = token[:len(token)-1]
+		nextData := data[advance:]
+		var nextAdvance int
+		var nextToken []byte
+		nextAdvance, nextToken, err = bufio.ScanLines(nextData, atEOF)
+		advance += nextAdvance
+		token = append(token, nextToken...)
+	}
+	return
+}
+
+// Synced embeds a graph.Graph and synchronizes read and write access with an embedded sync.RWMutex, making it concurrency-safe.
+// It satisfies the graph.Interface and fmt.Stringer interfaces.
+// The zero value is an uninitialized graph, use graph.NewSynced() to get an initialized graph.Synced.
+//
+// This implementation prefers fast(-ish) node lookups over edge removals because it keeps a map of all nodes ready.
+type Synced struct {
+	Graph
+	sync.RWMutex
+}
+
+// NewSynced returns a freshly initialized, ready-to-use graph.Synced
+// It takes an optional first parameter specifying the capacity of nodes that the Graph will contain, and an optional
+// second uint specifying the number of edges it will hold.
+func NewSynced(capacities ...uint) *Synced {
+	return &Synced{Graph: *New(capacities...)}
+}
+
+// AddNode adds the node with edges to the nodes with the given target names to this graph.
+func (g *Synced) AddNode(node Node, targetNames ...string) {
+	g.Lock()
+	defer g.Unlock()
+	g.Graph.AddNode(node, targetNames...)
+}
+
+// AddNodes adds the given nodes to this graph.
+func (g *Synced) AddNodes(nodes ...Node) {
+	g.Lock()
+	defer g.Unlock()
+	g.Graph.AddNodes(nodes...)
+}
+
+// GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
+func (g *Synced) GetNode(name string) Node {
+	g.RLock()
+	defer g.RUnlock()
+	return g.Graph.GetNode(name)
+}
+
+// GetNodes returns all Node objects saved in the Graph as a slice. If it is empty, an empty slice is returned.
+func (g *Synced) GetNodes() []Node {
+	g.RLock()
+	defer g.RUnlock()
+	return g.Graph.GetNodes()
+}
+
+// RemoveNode removes the Node with the given name including its edges from the graph.
+// Returns false if the graph didn't have a matching Node, true otherwise.
+func (g *Synced) RemoveNode(name string) bool {
+	g.Lock()
+	defer g.Unlock()
+	return g.Graph.RemoveNode(name)
+}
+
+// AddEdge adds an edge from the source Node to the target Node to the graph.
+func (g *Synced) AddEdge(source, target string) {
+	g.Lock()
+	defer g.Unlock()
+	g.Graph.AddEdge(source, target)
+}
+
+// AddEdgeAndNodes adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
+func (g *Synced) AddEdgeAndNodes(source, target Node) {
+	g.Lock()
+	defer g.Unlock()
+	g.Graph.AddEdgeAndNodes(source, target)
+}
+
+// HasEdge returns true if g has an edge from the source Node to the target Node, false otherwise.
+func (g *Synced) HasEdge(source, target string) bool {
+	g.RLock()
+	defer g.RUnlock()
+	return g.Graph.HasEdge(source, target)
+}
+
+// RemoveEdge removes the edge from the source Node to the target Node.
+// Returns false if the graph didn't have an edge from source to target, true otherwise.
+func (g *Synced) RemoveEdge(source, target string) bool {
+	g.Lock()
+	defer g.Unlock()
+	return g.Graph.RemoveEdge(source, target)
+}
+
+// GetDependencies returns a slice containing all dependencies of the Node with the given string.
+// The graph.Synced contains an edge from the Node to each item in the returned dependencies.
+func (g *Synced) GetDependencies(node string) []Node {
+	g.RLock()
+	defer g.RUnlock()
+	return g.Graph.GetDependencies(node)
+}
+
+// GetDependants returns a slice containing all dependants of the Node with the given string.
+// The graph.Synced contains an edge from each item in dependants to the Node.
+func (g *Synced) GetDependants(node string) []Node {
+	g.RLock()
+	defer g.RUnlock()
+	return g.Graph.GetDependants(node)
+}
+
+// Copy returns a deep copy of the graph.Synced.
+func (g *Synced) Copy() Interface {
+	g.RLock()
+	defer g.RUnlock()
+	return &Synced{Graph: *g.Graph.Copy().(*Graph)}
+}
+
+// GetDependencyGraph builds the dependency graph for the node. Returns nil if no node with the given name was found in g.
+// If read/write access to the dependency graph shall be thread-safe as well you need to embed it in a Synced!
+func (g *Synced) GetDependencyGraph(nodename string) *Graph {
+	g.RLock()
+	defer g.RUnlock()
+	return g.Graph.GetDependencyGraph(nodename)
+}
+
 // FromScanner reads data from the given scanner, building up the dependency tree.
-func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) (*Graph, error) {
+// This uses multiple workers to concurrently write the read edges
+func (g *Synced) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) (*Synced, error) {
 	if len(syntaxes) == 0 {
 		panic("FromScanner: At least one syntax required!")
 	}
 	scanner.Split(scanLineWithEscape)
 	activeSyntaxes := make(map[*syntax.Syntax]struct{}, len(syntaxes))
+	addEdge := func(s string, t string) { g.AddEdgeAndNodes(node(s), node(t)) }
 	// for running concurrently, we'll add a pool of worker goroutines
 	numWorkers := runtime.GOMAXPROCS(0)
 	// we need to wait for our goroutines to finish
@@ -344,7 +496,7 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) 
 		go func() {
 			defer waitGroup.Done()
 			for task := range tasks {
-				g.scanDependencies(task.line, task.syntax)
+				scanDependencies(task.line, task.syntax, addEdge)
 			}
 		}()
 	}
@@ -375,32 +527,8 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) 
 }
 
 // String returns a simple string representation consisting of all edges.
-func (g *Graph) String() string {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
-	if len(g.nodes) == 0 {
-		return "{empty graph}"
-	}
-	var buffer bytes.Buffer
-	for _, edge := range g.edges {
-		buffer.WriteString(edge.String())
-		buffer.WriteString("; ")
-	}
-	return buffer.String()
-}
-
-// scanLineWithEscape is a drop-in replacement for bufio.ScanLines, appending the next line if the last byte is a backslash '\'
-func scanLineWithEscape(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	advance, token, err = bufio.ScanLines(data, atEOF)
-	for err == nil && len(token) > 0 && token[len(token)-1] == '\\' {
-		// omit the trailing backslash
-		token = token[:len(token)-1]
-		nextData := data[advance:]
-		var nextAdvance int
-		var nextToken []byte
-		nextAdvance, nextToken, err = bufio.ScanLines(nextData, atEOF)
-		advance += nextAdvance
-		token = append(token, nextToken...)
-	}
-	return
+func (g *Synced) String() string {
+	g.RLock()
+	defer g.RUnlock()
+	return g.Graph.String()
 }
