@@ -1,4 +1,4 @@
-depgrapher
+depgrapher   [![GoDoc](https://godoc.org/github.com/SimplicityApks/depgrapher?status.svg)](https://godoc.org/github.com/SimplicityApks/depgrapher)
 ==========
 
 A simple command-line utility to generate dependency graphs from Makefiles written in Go.
@@ -8,7 +8,7 @@ Installation
 
 `go get github.com/SimplicityApks/depgrapher`
 
-or checkout repo and run
+or clone repo and run
  
 `go build`
 

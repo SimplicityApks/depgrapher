@@ -195,7 +195,7 @@ func (g *Graph) RemoveEdge(source, target string) bool {
 // GetDependencies returns a slice containing all dependencies of the Node with the given string.
 // The Graph contains an edge from the Node to each item in the returned dependencies.
 func (g *Graph) GetDependencies(node string) []Node {
-	deps := make([]Node, 0)
+	var deps []Node
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
@@ -206,10 +206,10 @@ func (g *Graph) GetDependencies(node string) []Node {
 	return deps
 }
 
-// GetDependencies returns a slice containing all dependants of the Node with the given string.
+// GetDependants returns a slice containing all dependants of the Node with the given string.
 // The Graph contains an edge from each item in dependants to the Node.
 func (g *Graph) GetDependants(node string) []Node {
-	deps := make([]Node, 0)
+	var deps []Node
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
 	for _, edge := range g.edges {
@@ -243,7 +243,7 @@ func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 	if !ok {
 		return nil
 	}
-	startEdges := make([]edge, 0)
+	var startEdges []edge
 	for _, edge := range g.edges {
 		if edge.source == start {
 			startEdges = append(startEdges, edge)
