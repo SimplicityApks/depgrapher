@@ -83,13 +83,37 @@ func TestGraph_AddNode(t *testing.T) {
 	if !g.HasEdge("2", "1") || g.HasEdge("1", "2") {
 		t.FailNow()
 	}
+	g.AddNode(intnode(3), "3")
+	if !g.HasEdge("3", "3") {
+		t.Error("AddNode didn't add node with edge to itself")
+	}
+}
+
+func TestGraph_AddNodes(t *testing.T) {
+	g := New()
+	g.AddNodes()
+	if len(g.GetNodes()) != 0 {
+		t.FailNow()
+	}
+	n1 := intnode(1)
+	g.AddNodes(n1)
+	if len(g.GetNodes()) != 1 || g.GetNodes()[0] != n1 {
+		t.FailNow()
+	}
+	g.AddNodes(intnode(2), intnode(3))
+	if len(g.GetNodes()) != 3 {
+		t.FailNow()
+	}
+	if g.HasEdge("1", "2") || g.HasEdge("2", "1") || g.HasEdge("1", "3") || g.HasEdge("3", "1") {
+		t.Error("AddNodes added unexpected edges")
+	}
 }
 
 func TestGraph_GetNode(t *testing.T) {
 	var levels uint = TEST_GRAPH_LEVELS
 	g := setupLevelGraph(levels)
 	if g.GetNode("nonexistent") != nil {
-		t.Error("GetNode returned a value for a not existing node!")
+		t.Error("GetNode returned a value for a not existing node")
 	}
 	for i := 1; i < (1 << levels); i++ {
 		n1 := g.GetNode(strconv.Itoa(i))
@@ -136,23 +160,47 @@ func TestGraph_RemoveNode(t *testing.T) {
 		}
 	}
 	if len(g.GetNodes()) != 0 {
-		t.Error("RemoveNode didn't remove all nodes!")
+		t.Error("RemoveNode didn't remove all nodes")
 	}
 }
 
 func TestGraph_AddEdge(t *testing.T) {
-	g := New()
-	n := intnode(1)
-	g.AddEdge(n, intnode(2))
+	g := New(3, 3)
+	g.AddNodes(intnode(1), intnode(2), intnode(3))
+	g.AddEdge("1", "2")
 	if !g.HasEdge("1", "2") {
 		t.Fail()
 	}
-	g.AddEdge(n, intnode(3))
+	g.AddEdge("1", "3")
 	if !g.HasEdge("1", "3") {
 		t.Fail()
 	}
 	if g.HasEdge("2", "3") || g.HasEdge("3", "2") || g.HasEdge("3", "1") {
-		t.Error("AddEdge added wrong edges!")
+		t.Error("AddEdge added wrong edges")
+	}
+	g.AddEdge("1", "1")
+	if !g.HasEdge("1", "1") {
+		t.Error("AddEdge didn't add edge to same node")
+	}
+}
+
+func TestGraph_AddEdgeAndNodes(t *testing.T) {
+	g := New()
+	n := intnode(1)
+	g.AddEdgeAndNodes(n, intnode(2))
+	if !g.HasEdge("1", "2") {
+		t.Fail()
+	}
+	g.AddEdgeAndNodes(n, intnode(3))
+	if !g.HasEdge("1", "3") {
+		t.Fail()
+	}
+	if g.HasEdge("2", "3") || g.HasEdge("3", "2") || g.HasEdge("3", "1") {
+		t.Error("AddEdge added wrong edges")
+	}
+	g.AddEdgeAndNodes(n, n)
+	if !g.HasEdge("1", "1") {
+		t.Error("Couldn't add edge to same node")
 	}
 
 	g2 := setupLevelGraph(3)
@@ -160,9 +208,9 @@ func TestGraph_AddEdge(t *testing.T) {
 	if n1 == nil || n7 == nil {
 		t.Fatal("Couldn't find nodes in levelgraph")
 	}
-	g2.AddEdge(n1.(intnode), n7.(intnode))
+	g2.AddEdgeAndNodes(n1.(intnode), n7.(intnode))
 	if len(g2.GetNodes()) != 7 {
-		t.Error("AddEdge added nodes unexpectedly!")
+		t.Error("AddEdge added nodes unexpectedly")
 	}
 	if !g2.HasEdge("1", "7") {
 		t.Fail()
@@ -174,7 +222,10 @@ func TestGraph_HasEdge(t *testing.T) {
 	g := setupLevelGraph(levels)
 	// check not existing nodes
 	if g.HasEdge("1", "nonexistent") || g.HasEdge("nonexistent", "1") || g.HasEdge("nonexistent", "nonexistent2") {
-		t.Error("HasEdge returned true for a not existing node!")
+		t.Error("HasEdge returned true for a not existing node")
+	}
+	if g.HasEdge("1", "1") {
+		t.Error("HasEdge returned true for an not added edge from a node to itself")
 	}
 	// loop through all edges
 	for ; level < levels-1; level++ {
@@ -198,7 +249,7 @@ func TestGraph_RemoveEdge(t *testing.T) {
 	g := setupLevelGraph(levels)
 	// check not existing nodes
 	if g.RemoveEdge("1", "nonexistent") || g.RemoveEdge("nonexistent", "1") || g.RemoveEdge("nonexistent", "nonexistent2") {
-		t.Error("RemoveEdge returned true for a not existing node!")
+		t.Error("RemoveEdge returned true for a not existing node")
 	}
 	// loop through all edges
 	for ; level < levels-1; level++ {
@@ -327,10 +378,15 @@ func TestGraph_GetDependencyGraph(t *testing.T) {
 	}
 	// add one more node
 	g.AddNode(intnode(0), "1")
+	// add an edge to the same loop (possible infinite recursion!)
+	g.AddEdge("1", "1")
 	// get the subgraph, which should equal the starting level graph
 	depgraph := g.GetDependencyGraph("1")
 	if len(depgraph.GetNodes()) != (1<<levels)-1 {
 		t.Error("GetDependencyGraph didn't contain the expected number of nodes")
+	}
+	if !depgraph.HasEdge("1", "1") {
+		t.Error("GetDependencyGraph didn't contain edge from node to itself")
 	}
 	for i := 1; i < (1 << levels); i++ {
 		n1 := depgraph.GetNode(strconv.Itoa(i))
@@ -419,6 +475,15 @@ func BenchmarkGraph_AddNode_dependencies(b *testing.B) {
 	}
 }
 
+func BenchmarkGraph_AddNodes(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	nodeOffset := 1 << BENCH_GRAPH_LEVELS
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.AddNodes(intnode(nodeOffset+2*i), intnode(nodeOffset+2*i+1))
+	}
+}
+
 func BenchmarkGraph_GetNode(b *testing.B) {
 	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
 	// run GetNode on the node on the bottom right of the graph (worst case in the levelGraph)
@@ -477,6 +542,24 @@ func BenchmarkGraph_RemoveNode_dependencies(b *testing.B) {
 func BenchmarkGraph_AddEdge(b *testing.B) {
 	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
 	// run AddEdge on the node on the bottom right of the graph (worst case in the levelGraph)
+	var node int = 1 << (BENCH_GRAPH_LEVELS - 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if node == (1 << BENCH_GRAPH_LEVELS) {
+			// we added edges for all nodes in the level, restore it
+			b.StopTimer()
+			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
+			node = 1 << (BENCH_GRAPH_LEVELS - 1)
+			b.StartTimer()
+		}
+		g.AddEdge(strconv.Itoa(node), "1")
+		node++
+	}
+}
+
+func BenchmarkGraph_AddEdgeAndNodes(b *testing.B) {
+	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
+	// run AddEdge on the node on the bottom right of the graph (worst case in the levelGraph)
 	var node uint = 1 << (BENCH_GRAPH_LEVELS - 1)
 	startnode := intnode(1)
 	b.ResetTimer()
@@ -488,7 +571,8 @@ func BenchmarkGraph_AddEdge(b *testing.B) {
 			node = 1 << (BENCH_GRAPH_LEVELS - 1)
 			b.StartTimer()
 		}
-		g.AddEdge(intnode(node), startnode)
+		g.AddEdgeAndNodes(intnode(node), startnode)
+		node++
 	}
 }
 

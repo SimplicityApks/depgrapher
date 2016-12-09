@@ -130,11 +130,13 @@ func PrintFullDepTree(graph Interface) {
 	}
 	// make a copy of our graph
 	fullGraph := graph.Copy()
+	var allDeps []string
 	for _, n := range fullGraph.GetNodes() {
 		if len(fullGraph.GetDependants(n.String())) == 0 {
-			fullGraph.AddEdge(node("_all"), n)
+			allDeps = append(allDeps, n.String())
 		}
 	}
+	fullGraph.AddNode(node("_all"), allDeps...)
 	nodeFinished = map[Node]struct{}{}
 	out, width := printDepTreeLevel(fullGraph, fullGraph.GetNode("_all"), make([]*string, 1), 0)
 	out = wrapToStdout(out[3:], width)

@@ -51,8 +51,8 @@ type Interface interface {
 	// Returns false if the graph didn't have a matching Node, true otherwise.
 	RemoveNode(name string) bool
 
-	// AddEdge adds a new edge from source to target to the graph. The nodes are added to the graph if they were not present.
-	AddEdge(source, target Node)
+	// AddEdge adds an edge from the source Node to the target Node to the graph.
+	AddEdge(source, target string)
 	// HasEdge returns true if the graph has an edge from the source Node to the target Node, false otherwise.
 	HasEdge(source, target string) bool
 	// RemoveEdge removes the edge from the source Node to the target Node.
@@ -60,7 +60,7 @@ type Interface interface {
 	RemoveEdge(source, target string) bool
 	// GetDependencies returns a slice containing all dependencies of the Node with the given string.
 	GetDependencies(node string) []Node
-	// GetDependencies returns a slice containing all dependants of the Node with the given string.
+	// GetDependants returns a slice containing all dependants of the Node with the given string.
 	GetDependants(node string) []Node
 
 	// Copy returns a deep copy of the graph.
@@ -108,6 +108,15 @@ func (g *Graph) AddNode(node Node, targetNames ...string) {
 	}
 }
 
+// AddNodes adds the given nodes to this graph.
+func (g *Graph) AddNodes(nodes ...Node) {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	for _, node := range nodes {
+		g.nodes[node.String()] = node
+	}
+}
+
 // GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
 func (g *Graph) GetNode(name string) Node {
 	g.mutex.RLock()
@@ -147,8 +156,23 @@ func (g *Graph) RemoveNode(name string) bool {
 	return true
 }
 
-// AddEdge adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
-func (g *Graph) AddEdge(source, target Node) {
+// AddEdge adds an edge from the source Node to the target Node to the graph.
+func (g *Graph) AddEdge(source, target string) {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	sourceNode, ok := g.nodes[source]
+	if !ok {
+		panic("AddEdge: source Node not present in Graph!")
+	}
+	targetNode, ok := g.nodes[target]
+	if !ok {
+		panic("AddEdge: source Node not present in Graph!")
+	}
+	g.edges = append(g.edges, edge{source: sourceNode, target: targetNode})
+}
+
+// AddEdgeAndNodes adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
+func (g *Graph) AddEdgeAndNodes(source, target Node) {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 	// add the nodes if they aren't already in place
@@ -290,7 +314,7 @@ func (g *Graph) scanDependencies(line string, syntax *syntax.Syntax) {
 					target = strings.TrimSpace(target)
 				}
 				if target != "" {
-					g.AddEdge(node(source), node(target))
+					g.AddEdgeAndNodes(node(source), node(target))
 				}
 			}
 		}
