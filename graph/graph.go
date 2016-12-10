@@ -30,12 +30,12 @@ func (s node) String() string {
 }
 
 type edge struct {
-	source Node
-	target Node
+	source string
+	target string
 }
 
 func (e *edge) String() string {
-	return e.source.String() + " => " + e.target.String()
+	return e.source + " => " + e.target
 }
 
 // Interface defines a basic graph-like data structure.
@@ -98,11 +98,10 @@ func New(capacities ...uint) *Graph {
 func (g *Graph) AddNode(node Node, targetNames ...string) {
 	g.nodes[node.String()] = node
 	for _, name := range targetNames {
-		target, ok := g.nodes[name]
-		if !ok {
+		if _, ok := g.nodes[name]; !ok {
 			panic(errors.New("AddNode: target node with name " + name + " not present in Graph"))
 		}
-		g.edges = append(g.edges, edge{source: node, target: target})
+		g.edges = append(g.edges, edge{source: node.String(), target: name})
 	}
 }
 
@@ -130,13 +129,12 @@ func (g *Graph) GetNodes() []Node {
 // RemoveNode removes the Node with the given name including its edges from the graph.
 // Returns false if the graph didn't have a matching Node, true otherwise.
 func (g *Graph) RemoveNode(name string) bool {
-	node := g.nodes[name]
-	delete(g.nodes, name)
-	if node == nil {
+	if _, ok := g.nodes[name]; !ok {
 		return false
 	}
+	delete(g.nodes, name)
 	for i, e := range g.edges {
-		if e.source == node || e.target == node {
+		if e.source == name || e.target == name {
 			// safe delete without preserving order
 			g.edges[i] = g.edges[len(g.edges)-1]
 			g.edges[len(g.edges)-1] = edge{}
@@ -148,33 +146,32 @@ func (g *Graph) RemoveNode(name string) bool {
 
 // AddEdge adds an edge from the source Node to the target Node to the graph.
 func (g *Graph) AddEdge(source, target string) {
-	sourceNode, ok := g.nodes[source]
-	if !ok {
+	if _, ok := g.nodes[source]; !ok {
 		panic("AddEdge: source Node not present in Graph!")
 	}
-	targetNode, ok := g.nodes[target]
-	if !ok {
+	if _, ok := g.nodes[target]; !ok {
 		panic("AddEdge: source Node not present in Graph!")
 	}
-	g.edges = append(g.edges, edge{source: sourceNode, target: targetNode})
+	g.edges = append(g.edges, edge{source: source, target: target})
 }
 
 // AddEdgeAndNodes adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
 func (g *Graph) AddEdgeAndNodes(source, target Node) {
+	sourceName, targetName := source.String(), target.String()
 	// add the nodes if they aren't already in place
-	if _, ok := g.nodes[source.String()]; !ok {
-		g.nodes[source.String()] = source
+	if _, ok := g.nodes[sourceName]; !ok {
+		g.nodes[sourceName] = source
 	}
-	if _, ok := g.nodes[target.String()]; !ok {
-		g.nodes[target.String()] = target
+	if _, ok := g.nodes[targetName]; !ok {
+		g.nodes[targetName] = target
 	}
-	g.edges = append(g.edges, edge{source: source, target: target})
+	g.edges = append(g.edges, edge{source: sourceName, target: targetName})
 }
 
 // HasEdge returns true if g has an edge from the source Node to the target Node, false otherwise.
 func (g *Graph) HasEdge(source, target string) bool {
 	for _, edge := range g.edges {
-		if edge.source.String() == source && edge.target.String() == target {
+		if edge.source == source && edge.target == target {
 			return true
 		}
 	}
@@ -185,7 +182,7 @@ func (g *Graph) HasEdge(source, target string) bool {
 // Returns false if the graph didn't have an edge from source to target, true otherwise.
 func (g *Graph) RemoveEdge(source, target string) bool {
 	for index, e := range g.edges {
-		if e.source.String() == source && e.target.String() == target {
+		if e.source == source && e.target == target {
 			// delete without preserving order as it is faster
 			last := len(g.edges) - 1
 			g.edges[index] = g.edges[last]
@@ -203,8 +200,8 @@ func (g *Graph) RemoveEdge(source, target string) bool {
 func (g *Graph) GetDependencies(node string) []Node {
 	var deps []Node
 	for _, edge := range g.edges {
-		if edge.source.String() == node {
-			deps = append(deps, edge.target)
+		if edge.source == node {
+			deps = append(deps, g.nodes[edge.target])
 		}
 	}
 	return deps
@@ -215,8 +212,8 @@ func (g *Graph) GetDependencies(node string) []Node {
 func (g *Graph) GetDependants(node string) []Node {
 	var deps []Node
 	for _, edge := range g.edges {
-		if edge.target.String() == node {
-			deps = append(deps, edge.source)
+		if edge.target == node {
+			deps = append(deps, g.nodes[edge.source])
 		}
 	}
 	return deps
@@ -243,7 +240,7 @@ func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 	}
 	var startEdges []edge
 	for _, edge := range g.edges {
-		if edge.source == start {
+		if edge.source == nodename {
 			startEdges = append(startEdges, edge)
 		}
 	}
@@ -255,11 +252,11 @@ func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 	for i := 0; i < len(result.edges); i++ {
 		edge := result.edges[i]
 		// check if target node is present
-		if _, ok := result.nodes[edge.target.String()]; ok {
+		if _, ok := result.nodes[edge.target]; ok {
 			continue
 		}
 		// target has not been added yet, add it and its dependencies
-		result.nodes[edge.target.String()] = edge.target
+		result.nodes[edge.target] = g.nodes[edge.target]
 		// we modify the iterating slice here, but that is fine because it is only appending
 		for _, e := range g.edges {
 			if e.source == edge.target {
