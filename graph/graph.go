@@ -472,7 +472,7 @@ func (g *Synced) GetDependencyGraph(nodename string) *Graph {
 }
 
 // FromScanner reads data from the given scanner, building up the dependency tree.
-// This uses multiple workers to concurrently write the read edges
+// This uses multiple workers to concurrently write the read edges.
 func (g *Synced) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) (*Synced, error) {
 	if len(syntaxes) == 0 {
 		panic("FromScanner: At least one syntax required!")
