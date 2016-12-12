@@ -551,41 +551,41 @@ func BenchmarkGraph_RemoveNode_dependencies(b *testing.B) {
 
 func BenchmarkGraph_AddEdge(b *testing.B) {
 	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
-	// run AddEdge on the node on the bottom level of the graph (worst case in the levelGraph)
-	const nodecount = 1 << (BENCH_GRAPH_LEVELS - 1)
+	// run AddEdge on all possible edges in the graph from nodes with a bigger number to all smaller nodes
+	const nodecount = (1 << BENCH_GRAPH_LEVELS) - 1
 	nodenames := make([]string, 0, nodecount)
-	for n := nodecount; n < 2*nodecount; n++ {
+	for n := 1; n <= nodecount; n++ {
 		nodenames = append(nodenames, strconv.Itoa(n))
 	}
-	node := 0
+	target := 0
+	source := 1
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if node == nodecount {
+		if source == nodecount {
 			// we added edges for all nodes in the level, restore it
 			b.StopTimer()
 			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
-			node = 0
+			target = 0
+			source = 1
 			b.StartTimer()
 		}
-		g.AddEdge(nodenames[node], "1")
-		node++
+		// we cannot reset the graph after adding all
+		g.AddEdge(nodenames[source], nodenames[target])
+		target++
+		if target == source {
+			target = 0
+			source++
+		}
 	}
 }
 
 func BenchmarkGraph_AddEdgeAndNodes(b *testing.B) {
 	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
-	// run AddEdge on the node on the bottom right of the graph (worst case in the levelGraph)
-	var node uint = 1 << (BENCH_GRAPH_LEVELS - 1)
+	// run AddEdge on an edge from one new node to the starting node
+	var node uint = 1 << BENCH_GRAPH_LEVELS
 	startnode := intnode(1)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if node == (1 << BENCH_GRAPH_LEVELS) {
-			// we added edges for all nodes in the level, restore it
-			b.StopTimer()
-			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
-			node = 1 << (BENCH_GRAPH_LEVELS - 1)
-			b.StartTimer()
-		}
 		g.AddEdgeAndNodes(intnode(node), startnode)
 		node++
 	}
@@ -604,24 +604,29 @@ func BenchmarkGraph_HasEdge(b *testing.B) {
 
 func BenchmarkGraph_RemoveEdge(b *testing.B) {
 	g := setupLevelGraph(BENCH_GRAPH_LEVELS)
-	// run RemoveEdge on the edges from the node on the bottom right to the bottom level of the graph (worst case in the levelGraph)
-	const nodecount = 1 << (BENCH_GRAPH_LEVELS - 1)
-	source := strconv.Itoa(nodecount - 1)
+	// run RemoveEdge on all edges in the graph
+	// we cannot reset the graph as RemoveEdge is too fast to accurately measure its time for all edges, so instead we
+	// call remove edge on edges that have been removed already.
+	const nodecount = (1 << BENCH_GRAPH_LEVELS) - 1
 	nodenames := make([]string, 0, nodecount)
-	for n := nodecount; n < 2*nodecount; n++ {
+	for n := 1; n <= nodecount; n++ {
 		nodenames = append(nodenames, strconv.Itoa(n))
 	}
-	target := 0
+	source := 0
+	target := 1
+	var sourceLevel uint = 0
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if target == nodecount {
-			// we removed all edges on the bottom, restore the graph
-			b.StopTimer()
-			g = setupLevelGraph(BENCH_GRAPH_LEVELS)
-			target = 0
-			b.StartTimer()
+		// target level is sourceLevel + 1
+		if target == (1<<(sourceLevel+2))-1 {
+			source++
+			if source == (1<<(sourceLevel+1))-1 {
+				// next level
+				sourceLevel++
+			}
+			target = (1 << (sourceLevel + 1)) - 1
 		}
-		g.RemoveEdge(source, nodenames[target])
+		g.RemoveEdge(nodenames[source%nodecount], nodenames[target%nodecount])
 		target++
 	}
 }

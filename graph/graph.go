@@ -72,10 +72,10 @@ type Interface interface {
 // It satisfies the graph.Interface and fmt.Stringer interfaces.
 // The zero value is an uninitialized graph, use graph.New() to get an initialized Graph.
 //
-// This implementation prefers fast(-ish) node lookups over edge removals because it keeps a map of all nodes ready.
+// This implementation prefers fast node lookups and edge removals over dependency lookups.
 type Graph struct {
 	nodes map[string]Node
-	edges []edge
+	edges map[edge]struct{}
 }
 
 // New returns a freshly initialized, ready-to-use Graph.
@@ -84,28 +84,33 @@ type Graph struct {
 func New(capacities ...uint) *Graph {
 	switch len(capacities) {
 	case 0:
-		return &Graph{nodes: make(map[string]Node)}
+		return &Graph{nodes: make(map[string]Node), edges: make(map[edge]struct{})}
 	case 1:
-		return &Graph{nodes: make(map[string]Node, capacities[0])}
+		return &Graph{nodes: make(map[string]Node, capacities[0]), edges: make(map[edge]struct{})}
 	case 2:
-		return &Graph{nodes: make(map[string]Node, capacities[0]), edges: make([]edge, 0, capacities[1])}
+		return &Graph{nodes: make(map[string]Node, capacities[0]), edges: make(map[edge]struct{}, capacities[1])}
 	default:
 		panic("More than 2 capacity parameters for graph.New")
 	}
 }
 
 // AddNode adds the node with edges to the nodes with the given target names to this graph.
+//
+// This operation takes constant time, O(1) (but proportional to the number of targetsNames).
 func (g *Graph) AddNode(node Node, targetNames ...string) {
-	g.nodes[node.String()] = node
-	for _, name := range targetNames {
-		if _, ok := g.nodes[name]; !ok {
-			panic(errors.New("AddNode: target node with name " + name + " not present in Graph"))
+	nodeName := node.String()
+	g.nodes[nodeName] = node
+	for _, targetName := range targetNames {
+		if _, ok := g.nodes[targetName]; !ok {
+			panic(errors.New("AddNode: target node with name " + targetName + " not present in Graph"))
 		}
-		g.edges = append(g.edges, edge{source: node.String(), target: name})
+		g.edges[edge{source: nodeName, target: targetName}] = struct{}{}
 	}
 }
 
 // AddNodes adds the given nodes to this graph.
+//
+// This operation takes constant time, O(1) (but proportional to the number of new nodes).
 func (g *Graph) AddNodes(nodes ...Node) {
 	for _, node := range nodes {
 		g.nodes[node.String()] = node
@@ -113,11 +118,15 @@ func (g *Graph) AddNodes(nodes ...Node) {
 }
 
 // GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
+//
+// This operation takes constant time, O(1).
 func (g *Graph) GetNode(name string) Node {
 	return g.nodes[name]
 }
 
 // GetNodes returns all Node objects saved in the Graph as a slice. If it is empty, an empty slice is returned.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Graph) GetNodes() []Node {
 	nodes := make([]Node, 0, len(g.nodes))
 	for _, node := range g.nodes {
@@ -128,23 +137,23 @@ func (g *Graph) GetNodes() []Node {
 
 // RemoveNode removes the Node with the given name including its edges from the graph.
 // Returns false if the graph didn't have a matching Node, true otherwise.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Graph) RemoveNode(name string) bool {
 	if _, ok := g.nodes[name]; !ok {
 		return false
 	}
 	delete(g.nodes, name)
-	for i, e := range g.edges {
-		if e.source == name || e.target == name {
-			// safe delete without preserving order
-			g.edges[i] = g.edges[len(g.edges)-1]
-			g.edges[len(g.edges)-1] = edge{}
-			g.edges = g.edges[:len(g.edges)-1]
-		}
+	for node := range g.nodes {
+		delete(g.edges, edge{source: name, target: node})
+		delete(g.edges, edge{source: node, target: name})
 	}
 	return true
 }
 
 // AddEdge adds an edge from the source Node to the target Node to the graph.
+//
+// This operation takes constant time, O(1).
 func (g *Graph) AddEdge(source, target string) {
 	if _, ok := g.nodes[source]; !ok {
 		panic("AddEdge: source Node not present in Graph!")
@@ -152,10 +161,12 @@ func (g *Graph) AddEdge(source, target string) {
 	if _, ok := g.nodes[target]; !ok {
 		panic("AddEdge: source Node not present in Graph!")
 	}
-	g.edges = append(g.edges, edge{source: source, target: target})
+	g.edges[edge{source: source, target: target}] = struct{}{}
 }
 
 // AddEdgeAndNodes adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
+//
+// This operation takes constant time, O(1).
 func (g *Graph) AddEdgeAndNodes(source, target Node) {
 	sourceName, targetName := source.String(), target.String()
 	// add the nodes if they aren't already in place
@@ -165,43 +176,37 @@ func (g *Graph) AddEdgeAndNodes(source, target Node) {
 	if _, ok := g.nodes[targetName]; !ok {
 		g.nodes[targetName] = target
 	}
-	g.edges = append(g.edges, edge{source: sourceName, target: targetName})
+	g.edges[edge{source: sourceName, target: targetName}] = struct{}{}
 }
 
 // HasEdge returns true if g has an edge from the source Node to the target Node, false otherwise.
+//
+// This operation takes constant time, O(1).
 func (g *Graph) HasEdge(source, target string) bool {
-	for _, edge := range g.edges {
-		if edge.source == source && edge.target == target {
-			return true
-		}
-	}
-	return false
+	_, ok := g.edges[edge{source: source, target: target}]
+	return ok
 }
 
 // RemoveEdge removes the edge from the source Node to the target Node.
 // Returns false if the graph didn't have an edge from source to target, true otherwise.
+//
+// This operation takes constant time, O(1).
 func (g *Graph) RemoveEdge(source, target string) bool {
-	for index, e := range g.edges {
-		if e.source == source && e.target == target {
-			// delete without preserving order as it is faster
-			last := len(g.edges) - 1
-			g.edges[index] = g.edges[last]
-			// set the last edge to nil so the nodes can be garbage collected
-			g.edges[last] = edge{}
-			g.edges = g.edges[:last]
-			return true
-		}
-	}
-	return false
+	e := edge{source: source, target: target}
+	_, ok := g.edges[e]
+	delete(g.edges, e)
+	return ok
 }
 
 // GetDependencies returns a slice containing all dependencies of the Node with the given string.
 // The Graph contains an edge from the Node to each item in the returned dependencies.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Graph) GetDependencies(node string) []Node {
 	var deps []Node
-	for _, edge := range g.edges {
-		if edge.source == node {
-			deps = append(deps, g.nodes[edge.target])
+	for currentName, current := range g.nodes {
+		if _, ok := g.edges[edge{source: node, target: currentName}]; ok {
+			deps = append(deps, current)
 		}
 	}
 	return deps
@@ -209,58 +214,69 @@ func (g *Graph) GetDependencies(node string) []Node {
 
 // GetDependants returns a slice containing all dependants of the Node with the given string.
 // The Graph contains an edge from each item in dependants to the Node.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Graph) GetDependants(node string) []Node {
 	var deps []Node
-	for _, edge := range g.edges {
-		if edge.target == node {
-			deps = append(deps, g.nodes[edge.source])
+	for currentName, current := range g.nodes {
+		if _, ok := g.edges[edge{source: currentName, target: node}]; ok {
+			deps = append(deps, current)
 		}
 	}
 	return deps
 }
 
 // Copy returns a deep copy of the Graph.
+//
+// This operation takes time proportional to the sum of the number of nodes and the number of edges in g, O(n+e).
 func (g *Graph) Copy() Interface {
 	result := &Graph{
 		nodes: make(map[string]Node, len(g.nodes)),
-		edges: make([]edge, len(g.edges)),
+		edges: make(map[edge]struct{}, len(g.edges)),
 	}
 	for k, v := range g.nodes {
 		result.nodes[k] = v
 	}
-	copy(result.edges, g.edges)
+	for e := range g.edges {
+		result.edges[e] = struct{}{}
+	}
 	return result
 }
 
 // GetDependencyGraph builds the dependency graph for the node. Returns nil if no node with the given name was found in g.
+//
+// This operation takes time proportional to product of the number of nodes and the number of edges in g, O(n*e).
 func (g *Graph) GetDependencyGraph(nodename string) *Graph {
 	start, ok := g.nodes[nodename]
 	if !ok {
 		return nil
 	}
-	var startEdges []edge
-	for _, edge := range g.edges {
-		if edge.source == nodename {
-			startEdges = append(startEdges, edge)
+	var edges []edge
+	for n := range g.nodes {
+		e := edge{source: nodename, target: n}
+		if _, ok := g.edges[e]; ok {
+			edges = append(edges, e)
 		}
 	}
 	result := &Graph{
 		nodes: map[string]Node{nodename: start},
-		edges: startEdges,
+		edges: map[edge]struct{}{},
 	}
 	// walk through the graph and add each node that we can reach from our start node
-	for i := 0; i < len(result.edges); i++ {
-		edge := result.edges[i]
+	for i := 0; i < len(edges); i++ {
+		current := edges[i]
+		result.edges[current] = struct{}{}
 		// check if target node is present
-		if _, ok := result.nodes[edge.target]; ok {
+		if _, ok := result.nodes[current.target]; ok {
 			continue
 		}
 		// target has not been added yet, add it and its dependencies
-		result.nodes[edge.target] = g.nodes[edge.target]
+		result.nodes[current.target] = g.nodes[current.target]
 		// we modify the iterating slice here, but that is fine because it is only appending
-		for _, e := range g.edges {
-			if e.source == edge.target {
-				result.edges = append(result.edges, e)
+		for targetNode := range g.nodes {
+			e := edge{source: current.target, target: targetNode}
+			if _, ok := g.edges[e]; ok {
+				edges = append(edges, e)
 			}
 		}
 	}
@@ -302,12 +318,14 @@ func (g *Graph) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax) 
 }
 
 // String returns a simple string representation consisting of all edges.
+//
+// This operation takes time proportional to the number of edges in g, O(e).
 func (g *Graph) String() string {
 	if len(g.nodes) == 0 {
 		return "{empty graph}"
 	}
 	var buffer bytes.Buffer
-	for _, edge := range g.edges {
+	for edge := range g.edges {
 		buffer.WriteString(edge.String())
 		buffer.WriteString("; ")
 	}
@@ -359,7 +377,7 @@ func scanLineWithEscape(data []byte, atEOF bool) (advance int, token []byte, err
 // It satisfies the graph.Interface and fmt.Stringer interfaces.
 // The zero value is an uninitialized graph, use graph.NewSynced() to get an initialized graph.Synced.
 //
-// This implementation prefers fast(-ish) node lookups over edge removals because it keeps a map of all nodes ready.
+// This implementation prefers fast node lookups and edge removals over dependency lookups.
 type Synced struct {
 	Graph
 	sync.RWMutex
@@ -373,6 +391,8 @@ func NewSynced(capacities ...uint) *Synced {
 }
 
 // AddNode adds the node with edges to the nodes with the given target names to this graph.
+//
+// This operation takes constant time, O(1) (but proportional to the number of targetsNames).
 func (g *Synced) AddNode(node Node, targetNames ...string) {
 	g.Lock()
 	defer g.Unlock()
@@ -380,6 +400,8 @@ func (g *Synced) AddNode(node Node, targetNames ...string) {
 }
 
 // AddNodes adds the given nodes to this graph.
+//
+// This operation takes constant time, O(1) (but proportional to the number of new nodes).
 func (g *Synced) AddNodes(nodes ...Node) {
 	g.Lock()
 	defer g.Unlock()
@@ -387,6 +409,8 @@ func (g *Synced) AddNodes(nodes ...Node) {
 }
 
 // GetNode returns the Node with the specified name, or nil if the name couldn't be found in g.
+//
+// This operation takes constant time, O(1).
 func (g *Synced) GetNode(name string) Node {
 	g.RLock()
 	defer g.RUnlock()
@@ -394,6 +418,8 @@ func (g *Synced) GetNode(name string) Node {
 }
 
 // GetNodes returns all Node objects saved in the Graph as a slice. If it is empty, an empty slice is returned.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Synced) GetNodes() []Node {
 	g.RLock()
 	defer g.RUnlock()
@@ -402,6 +428,8 @@ func (g *Synced) GetNodes() []Node {
 
 // RemoveNode removes the Node with the given name including its edges from the graph.
 // Returns false if the graph didn't have a matching Node, true otherwise.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Synced) RemoveNode(name string) bool {
 	g.Lock()
 	defer g.Unlock()
@@ -409,6 +437,8 @@ func (g *Synced) RemoveNode(name string) bool {
 }
 
 // AddEdge adds an edge from the source Node to the target Node to the graph.
+//
+// This operation takes constant time, O(1).
 func (g *Synced) AddEdge(source, target string) {
 	g.Lock()
 	defer g.Unlock()
@@ -416,6 +446,8 @@ func (g *Synced) AddEdge(source, target string) {
 }
 
 // AddEdgeAndNodes adds a new edge from source to target to the Graph. The nodes are added to the Graph if they were not present.
+//
+// This operation takes constant time, O(1).
 func (g *Synced) AddEdgeAndNodes(source, target Node) {
 	g.Lock()
 	defer g.Unlock()
@@ -423,6 +455,8 @@ func (g *Synced) AddEdgeAndNodes(source, target Node) {
 }
 
 // HasEdge returns true if g has an edge from the source Node to the target Node, false otherwise.
+//
+// This operation takes constant time, O(1).
 func (g *Synced) HasEdge(source, target string) bool {
 	g.RLock()
 	defer g.RUnlock()
@@ -431,6 +465,8 @@ func (g *Synced) HasEdge(source, target string) bool {
 
 // RemoveEdge removes the edge from the source Node to the target Node.
 // Returns false if the graph didn't have an edge from source to target, true otherwise.
+//
+// This operation takes constant time, O(1).
 func (g *Synced) RemoveEdge(source, target string) bool {
 	g.Lock()
 	defer g.Unlock()
@@ -439,6 +475,8 @@ func (g *Synced) RemoveEdge(source, target string) bool {
 
 // GetDependencies returns a slice containing all dependencies of the Node with the given string.
 // The graph.Synced contains an edge from the Node to each item in the returned dependencies.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Synced) GetDependencies(node string) []Node {
 	g.RLock()
 	defer g.RUnlock()
@@ -447,6 +485,8 @@ func (g *Synced) GetDependencies(node string) []Node {
 
 // GetDependants returns a slice containing all dependants of the Node with the given string.
 // The graph.Synced contains an edge from each item in dependants to the Node.
+//
+// This operation takes time proportional to the number of nodes in g, O(n).
 func (g *Synced) GetDependants(node string) []Node {
 	g.RLock()
 	defer g.RUnlock()
@@ -454,6 +494,8 @@ func (g *Synced) GetDependants(node string) []Node {
 }
 
 // Copy returns a deep copy of the graph.Synced.
+//
+// This operation takes time proportional to the sum of the number of nodes and the number of edges in g, O(n+e).
 func (g *Synced) Copy() Interface {
 	g.RLock()
 	defer g.RUnlock()
@@ -462,6 +504,8 @@ func (g *Synced) Copy() Interface {
 
 // GetDependencyGraph builds the dependency graph for the node. Returns nil if no node with the given name was found in g.
 // If read/write access to the dependency graph shall be thread-safe as well you need to embed it in a Synced!
+//
+// This operation takes time proportional to the product of the number of nodes and the number of edges in g, O(n*e).
 func (g *Synced) GetDependencyGraph(nodename string) *Graph {
 	g.RLock()
 	defer g.RUnlock()
@@ -524,6 +568,8 @@ func (g *Synced) FromScanner(scanner *bufio.Scanner, syntaxes ...*syntax.Syntax)
 }
 
 // String returns a simple string representation consisting of all edges.
+//
+// This operation takes time proportional to the number of edges in g, O(e).
 func (g *Synced) String() string {
 	g.RLock()
 	defer g.RUnlock()
