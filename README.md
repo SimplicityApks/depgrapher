@@ -2,6 +2,7 @@ depgrapher   [![GoDoc](https://godoc.org/github.com/SimplicityApks/depgrapher?st
 ==========
 
 A simple command-line utility to generate dependency graphs from Makefiles written in Go.
+Also contains a complete, ready-to-use graph implementation in [package graph](./graph).
 
 Installation
 ------------
@@ -17,9 +18,35 @@ Usage
 
 `depgrapher [-syntax syntaxname] [-node startname] [-outfile filename.dot|stdout] [file...]`
 
-Example:
+syntaxname has to be one of {Makefile, MakeCall, Dot} or a complete definition of a new syntax (see [package syntax](./syntax) 
+for more information).
 
-`depgrapher -syntax=Makefile -node all -outfile stdout Makefile`
+The optional startname restricts the output to the dependency graph of only the given node, instead of the whole graph.
+
+If the outfile parameter is set, the graph will be printed in Graphviz dot syntax instead of a visual representation.
+To get a nice graphical representation, you can pipe the output into Graphviz like so:   
+`depgrapher -outfile stdout ... | dot -Tpng > picturename.png`
+
+Example
+-------
+
+Suppose you have the following Makefile:
+
+    all: build install test
+    
+    build: prepare compile pack
+
+The command  
+`depgrapher -syntax=Makefile Makefile`  
+will produce the following output:
+
+                      all                  
+                  /           \       \
+                 V             V       V
+             build           install  test 
+          /      |     \
+         V       V      V
+     prepare  compile  pack
 
 License
 -------
